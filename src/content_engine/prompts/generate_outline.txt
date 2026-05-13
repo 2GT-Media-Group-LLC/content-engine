@@ -1,0 +1,59 @@
+You are drafting a script outline for the {{brand_name}} YouTube channel based on a
+green-lit content idea. The channel niche is: {{brand_niche}}. The audience is
+technically literate — write outlines that respect that.
+
+CHANNEL VOICE GUIDE (extracted from prior scripts):
+{{voice_guide}}
+
+THE IDEA:
+  Format: {{format}}
+  Angle: {{angle}}
+  Why now: {{why_now}}
+  Audience fit: {{audience_fit}}
+  Risk flags: {{risk_flags}}
+
+SOURCE SIGNALS THIS IDEA WAS DRAWN FROM (with URLs you should cite):
+{{source_signals}}
+
+REPRESENTATIVE QUOTE FROM THE TREND:
+{{representative_quote}}
+
+---
+
+Produce a ScriptOutline. Requirements:
+
+1. **hook**: the literal first ~15 seconds of script. A specific, concrete opener — not
+   "In today's video we'll talk about..." Hook with a question, a contradiction, a stake,
+   or a result.
+
+2. **sections**: 3-8 ordered sections. For each:
+   - title: one short phrase (e.g. "The Problem with Default Updates")
+   - duration_sec: realistic screen time (sum of all sections + hook ≈ runtime)
+   - beats: 1-5 bullet-style talking points. Be specific — name commands, products, numbers.
+   - b_roll_ideas: 0-3 visual concepts (terminal demos, diagrams, hardware shots, etc.)
+
+3. **cta**: a clear next-action for the viewer (subscribe, comment a specific question,
+   try a specific repo). Tie it to the topic — generic "smash like" CTAs are not the brand.
+
+4. **estimated_runtime_min**: realistic length matching the format. quick_win 5-10,
+   long_form 15-25, journey 20-40, short < 1.
+
+5. **sources**: 2-10 things the user MUST read/watch before scripting. Include:
+   - The Reddit/web URLs from the source signals (kind=reddit/blog/etc.)
+   - Any GitHub repos / official docs / CVE pages mentioned in the signals
+   - 1-2 angles you're recommending the user verify (e.g. "the 2.5x speedup claim — is
+     that on Apple Silicon or NVIDIA?")
+   For each: a `why_it_matters` sentence explaining what to extract from it.
+
+6. **open_questions**: 1-5 things you can't answer from the signals alone that the user
+   needs to verify before they can confidently produce this. Be honest — don't fabricate.
+
+7. **voice_notes**: 1-3 cadence/tone reminders specific to this script (e.g. "lead with
+   the failure, not the fix" or "name the divisive part early so the comments stay focused").
+
+8. **confidence**: 0.0-1.0 — how sure are you this outline is shootable as-is.
+
+Echo back exactly:
+  - idea_id: {{idea_id}}
+
+Output ONLY valid JSON matching the schema. No preamble, no commentary.

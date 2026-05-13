@@ -1,0 +1,19 @@
+You are naming a cluster of related content items for a {{brand_name}} content
+brief. The channel niche is: {{brand_niche}}. Below are short summaries from a
+single cluster.
+
+Pick:
+  - label: a 3-7 word descriptive name for this trend (no clickbait, no marketing fluff).
+  - representative_quote: the single most evocative sentence from the inputs (verbatim, max 200 chars).
+
+Output ONLY JSON matching the schema. No preamble.
+
+--- SUMMARIES ---
+{{summaries}}
+--- END ---
+
+Cluster id to echo back: {{cluster_id}}
+Signal ids in this cluster: {{signal_ids}}
+Dominant topics (already computed): {{dominant_topics}}
+Average sentiment (already computed, -1 to 1): {{avg_sentiment}}
+Heat score (already computed): {{heat_score}}

@@ -1,0 +1,149 @@
+{% extends "layout.html" %}
+{% block title %}{{ idea.payload.angle[:60] }} · {{ brand }}{% endblock %}
+{% block content %}
+
+{% set p = idea.payload %}
+
+<header class="mb-6">
+  <a href="/cycle/{{ idea.cycle_id }}" class="text-xs link">← back to cycle</a>
+  <div class="flex items-center gap-2 mt-3 flex-wrap">
+    <span class="pill pill-format">{{ p.format }}</span>
+    <span class="pill pill-fate-{{ idea.fate }}">{{ idea.fate }}</span>
+    {% for r in p.risk_flags %}<span class="pill pill-risk">⚠ {{ r }}</span>{% endfor %}
+  </div>
+  <h1 class="text-2xl font-semibold mt-3 leading-snug">{{ p.angle }}</h1>
+</header>
+
+<div class="grid md:grid-cols-3 gap-6">
+  <div class="md:col-span-2 space-y-6">
+    <section class="card rounded-2xl p-5">
+      <div class="text-[10px] text-white/40 uppercase tracking-wider mb-2">Why now</div>
+      <p class="text-white/85 leading-relaxed">{{ p.why_now }}</p>
+    </section>
+
+    {% if idea.outline %}
+    {% set o = idea.outline %}
+    <section class="card rounded-2xl p-5">
+      <div class="flex items-baseline justify-between mb-3">
+        <h2 class="text-lg font-semibold">Outline</h2>
+        <div class="text-xs text-white/40">{{ o.estimated_runtime_min }} min · {{ o.sections|length }} sections · {{ o.sources|length }} sources</div>
+      </div>
+      <div class="card rounded-lg p-4 bg-white/2 italic text-white/85 mb-4">"{{ o.hook }}"</div>
+      <div class="space-y-3">
+        {% for s in o.sections %}
+        <div class="card rounded-lg p-3">
+          <div class="flex items-baseline justify-between">
+            <h4 class="font-medium">{{ loop.index }}. {{ s.title }}</h4>
+            <span class="text-xs text-white/40 tabular-nums">{{ s.duration_sec }}s</span>
+          </div>
+          <ul class="mt-2 text-sm text-white/70 space-y-1">
+            {% for b in s.beats %}<li>· {{ b }}</li>{% endfor %}
+          </ul>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="mt-4 card rounded-lg p-3 bg-white/2">
+        <div class="text-[10px] text-white/40 uppercase tracking-wider mb-1">CTA</div>
+        <p class="text-sm">{{ o.cta }}</p>
+      </div>
+
+      {% if o.open_questions %}
+      <div class="mt-4 card rounded-lg p-3 bg-amber-950/30 border-amber-500/20">
+        <div class="text-[10px] text-amber-300/70 uppercase tracking-wider mb-2">Open questions — verify before scripting</div>
+        <ul class="space-y-1 text-sm text-amber-100/85">
+          {% for q in o.open_questions %}<li>? {{ q }}</li>{% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+
+      {% if o.sources %}
+      <div class="mt-4">
+        <div class="text-[10px] text-white/40 uppercase tracking-wider mb-2">Sources</div>
+        <div class="space-y-2">
+        {% for src in o.sources %}
+          <div class="card rounded-lg p-3 {% if not src.verified %}border-amber-500/30 bg-amber-950/15{% endif %}">
+            <div class="flex items-baseline justify-between gap-2">
+              <a href="{{ src.url }}" target="_blank" class="text-sm {% if src.verified %}link{% else %}text-amber-300{% endif %} truncate">{{ src.title }}</a>
+              <div class="flex gap-1.5 shrink-0">
+                {% if not src.verified %}<span class="pill pill-risk">⚠ unverified</span>{% endif %}
+                <span class="pill pill-platform">{{ src.kind }}</span>
+              </div>
+            </div>
+            <p class="text-xs text-white/55 mt-1">{{ src.why_it_matters }}</p>
+          </div>
+        {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+    </section>
+    {% endif %}
+
+    {% if idea.source_signals %}
+    <section class="card rounded-2xl p-5">
+      <h2 class="text-lg font-semibold mb-3">Raw source signals</h2>
+      <ul class="space-y-2 text-sm">
+        {% for s in idea.source_signals %}
+        <li class="card rounded-lg p-3">
+          <div class="flex items-baseline justify-between">
+            <a href="{{ s.url }}" target="_blank" class="link">{{ s.title }}</a>
+            <span class="pill pill-platform">{{ s.platform }}</span>
+          </div>
+          {% if s.one_line %}<div class="text-xs text-white/55 mt-1">{{ s.one_line }}</div>{% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+  </div>
+
+  <aside class="space-y-5">
+    <section class="card rounded-2xl p-5">
+      <div class="text-[10px] text-white/40 uppercase tracking-wider mb-3">Mark fate</div>
+      <form method="post" action="/idea/{{ idea.idea_id }}/fate" class="grid grid-cols-3 gap-2">
+        <button name="fate" value="produced" class="btn btn-produced text-xs">✓ Produce</button>
+        <button name="fate" value="parked"   class="btn btn-park text-xs">🅿 Park</button>
+        <button name="fate" value="rejected" class="btn btn-reject text-xs">✗ Reject</button>
+      </form>
+      <form method="post" action="/idea/{{ idea.idea_id }}/video" class="mt-4 space-y-2">
+        <label class="text-[10px] text-white/40 uppercase tracking-wider">Produced video ID</label>
+        <div class="flex gap-2">
+          <input name="video_id" value="{{ idea.produced_video_id or '' }}" placeholder="dQw4w9WgXcQ"
+                 class="flex-1 bg-white/5 rounded-md px-3 py-2 text-sm font-mono border border-white/10 focus:border-white/30 focus:outline-none" />
+          <button class="btn btn-secondary text-xs">Attach</button>
+        </div>
+      </form>
+    </section>
+
+    {% if p.title_scores %}
+    <section class="card rounded-2xl p-5">
+      <div class="text-[10px] text-white/40 uppercase tracking-wider mb-3">Title scores</div>
+      <ul class="space-y-1.5 text-sm">
+        {% for ts in p.title_scores %}
+        <li class="flex items-baseline gap-2">
+          <span class="font-mono tabular-nums text-xs shrink-0 w-8 text-right {% if loop.index <= 2 %}text-emerald-300{% else %}text-white/40{% endif %}">{{ '%.0f'|format(ts.score) }}</span>
+          <span class="{% if loop.index <= 2 %}text-white/90{% else %}text-white/50{% endif %}">{{ ts.title }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+
+    {% if p.thumbnail_concepts %}
+    <section class="card rounded-2xl p-5">
+      <div class="text-[10px] text-white/40 uppercase tracking-wider mb-3">Thumbnail concepts</div>
+      <ul class="space-y-1 text-sm text-white/75">
+        {% for tc in p.thumbnail_concepts %}<li>· {{ tc }}</li>{% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+
+    <section class="card rounded-2xl p-5 text-xs text-white/50">
+      <div>Confidence: <span class="text-white/85 font-mono">{{ '%.2f'|format(p.confidence) }}</span></div>
+      <div>Fatigue: <span class="text-white/85 font-mono">{{ '%.2f'|format(p.fatigue_score) }}</span></div>
+      <div>idea_id: <span class="font-mono">{{ idea.idea_id }}</span></div>
+      {% if idea.fate_set_at %}<div>Fate set: {{ idea.fate_set_at[:16] }}</div>{% endif %}
+    </section>
+  </aside>
+</div>
+
+{% endblock %}

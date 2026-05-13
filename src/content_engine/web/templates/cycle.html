@@ -1,0 +1,60 @@
+{% extends "layout.html" %}
+{% block title %}Cycle · {{ brand }} Engine{% endblock %}
+{% block content %}
+
+<header class="mb-8 flex items-baseline justify-between gap-4">
+  <div>
+    <div class="text-xs tracking-[0.3em] text-white/40 uppercase">Cycle</div>
+    <h1 class="text-2xl font-semibold mt-1 font-mono">{{ cycle.id }}</h1>
+    <div class="text-sm text-white/50 mt-1">{{ cycle.started_at[:16] }} · {{ cycle.notes or '' }}</div>
+  </div>
+  <a href="/swipe/{{ cycle.id }}" class="btn btn-primary">Triage →</a>
+</header>
+
+<div class="space-y-5">
+{% for item in ideas %}
+  {% set p = item.payload %}
+  <article class="card rounded-2xl p-6">
+    <div class="flex items-start justify-between gap-4">
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2 mb-2 flex-wrap">
+          <span class="pill pill-format">{{ p.format }}</span>
+          <span class="pill pill-fate-{{ item.fate }}">{{ item.fate }}</span>
+          {% for r in p.risk_flags %}<span class="pill pill-risk">⚠ {{ r }}</span>{% endfor %}
+        </div>
+        <h2 class="text-lg font-medium leading-snug">{{ p.angle }}</h2>
+        <p class="text-sm text-white/65 mt-2">{{ p.why_now }}</p>
+      </div>
+      <div class="shrink-0 text-right">
+        <div class="text-xs text-white/40 uppercase tracking-wider">conf</div>
+        <div class="text-xl font-semibold tabular-nums">{{ '%.2f'|format(p.confidence) }}</div>
+      </div>
+    </div>
+
+    {% if p.title_scores %}
+    <div class="mt-4">
+      <div class="text-[10px] text-white/40 uppercase tracking-wider mb-1">Top titles</div>
+      <ul class="space-y-1 text-sm">
+      {% for ts in p.title_scores[:3] %}
+        <li class="flex items-baseline gap-2">
+          <span class="font-mono tabular-nums text-xs shrink-0 w-9 text-right {% if loop.index <= 2 %}text-emerald-300{% else %}text-white/40{% endif %}">{{ '%.0f'|format(ts.score) }}</span>
+          <span class="{% if loop.index <= 2 %}text-white/90{% else %}text-white/50{% endif %}">{{ ts.title }}</span>
+        </li>
+      {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    <div class="mt-4 flex items-center gap-3">
+      <a href="/idea/{{ item.idea_id }}" class="btn btn-secondary text-xs">Details →</a>
+      <form method="post" action="/idea/{{ item.idea_id }}/fate" class="flex gap-2 ml-auto">
+        <button name="fate" value="produced" class="btn btn-produced text-xs">✓</button>
+        <button name="fate" value="parked"   class="btn btn-park text-xs">🅿</button>
+        <button name="fate" value="rejected" class="btn btn-reject text-xs">✗</button>
+      </form>
+    </div>
+  </article>
+{% endfor %}
+</div>
+
+{% endblock %}

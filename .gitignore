@@ -1,0 +1,33 @@
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.env
+.env.local
+
+# Channel-specific config (copy from channel.example.yaml). Private.
+channel.yaml
+
+# Personal voice + performance data. Re-extracted per channel.
+style/voice_guide.md
+data/voice_corpus/
+data/2gt_perf_30d.json
+data/*_perf_30d.json
+
+# Manual run logs may contain env vars / paths
+data/runs/
+data/engine.db
+data/engine.db-*
+data/vectors/
+reports/*.html
+reports/*.pdf
+!reports/.gitkeep
+.DS_Store
+.pytest_cache/
+.ruff_cache/
+
+# Private working/continuation notes (not for public repo)
+CONTINUE.md
+docs/SESSION_*_SETUP.md

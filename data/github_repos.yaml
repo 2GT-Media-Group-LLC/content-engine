@@ -1,0 +1,40 @@
+# GitHub repos whose releases we track. The collector hits
+# /repos/<owner>/<repo>/releases (no auth required, rate-limited to 60/hr
+# unauthenticated which is plenty at our volume).
+#
+# Each entry: `owner/repo`. Add tag for niche steering.
+
+- repo: ollama/ollama
+  tags: [ai-local]
+- repo: ggml-org/llama.cpp
+  tags: [ai-local]
+- repo: vllm-project/vllm
+  tags: [ai-local, performance]
+- repo: dani-garcia/vaultwarden
+  tags: [self-hosting, security]
+- repo: paperless-ngx/paperless-ngx
+  tags: [self-hosting]
+- repo: immich-app/immich
+  tags: [self-hosting]
+- repo: home-assistant/core
+  tags: [self-hosting, home-automation]
+- repo: tailscale/tailscale
+  tags: [networking]
+- repo: nextcloud/server
+  tags: [self-hosting]
+- repo: containrrr/watchtower
+  tags: [docker, self-hosting]
+- repo: portainer/portainer
+  tags: [docker, self-hosting]
+- repo: NickM-27/frigate
+  tags: [self-hosting, ai-local]
+- repo: AdguardTeam/AdGuardHome
+  tags: [networking, self-hosting]
+- repo: pi-hole/pi-hole
+  tags: [networking, self-hosting]
+- repo: louislam/uptime-kuma
+  tags: [self-hosting]
+- repo: gethomepage/homepage
+  tags: [self-hosting]
+- repo: opnsense/core
+  tags: [networking]

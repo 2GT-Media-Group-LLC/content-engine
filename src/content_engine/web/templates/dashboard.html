@@ -1,0 +1,128 @@
+{% extends "layout.html" %}
+{% block title %}Dashboard · {{ brand }} Engine{% endblock %}
+{% block content %}
+
+<header class="mb-8 flex items-end justify-between gap-4">
+  <div>
+    <div class="text-xs tracking-[0.3em] text-white/40 uppercase">Dashboard</div>
+    <h1 class="text-3xl font-semibold mt-2">Content briefs</h1>
+  </div>
+  <form method="post" action="/run" class="shrink-0">
+    <button class="btn btn-primary">▶ Run now</button>
+  </form>
+</header>
+
+{% if request.query_params.get('status') == 'started' %}
+<div class="card rounded-xl p-4 mb-6 bg-emerald-950/30 border-emerald-500/30 text-sm">
+  ✓ Manual run started — watch the banner below for progress.
+</div>
+{% elif request.query_params.get('status') == 'already_running' %}
+<div class="card rounded-xl p-4 mb-6 bg-amber-950/30 border-amber-500/30 text-sm">
+  ⚠ A run is already in progress. New triggers ignored until it finishes.
+</div>
+{% elif request.query_params.get('status') == 'cancelled' %}
+<div class="card rounded-xl p-4 mb-6 bg-white/5 text-sm text-white/70">
+  Run cancelled.
+</div>
+{% endif %}
+
+{# Run-status banner. HTMX boots it on page load and re-polls itself. #}
+<div id="run-status"
+     hx-get="/run/status/fragment"
+     hx-trigger="load"
+     hx-swap="outerHTML"></div>
+
+{% if latest %}
+<section class="mb-12">
+  <div class="flex items-baseline justify-between mb-4">
+    <h2 class="text-xl font-semibold">Latest cycle</h2>
+    <div class="text-xs text-white/40 font-mono">{{ latest.id }}</div>
+  </div>
+  <div class="card rounded-2xl p-6 glow">
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-6">
+      <div>
+        <div class="text-xs text-white/40 uppercase tracking-wider">Started</div>
+        <div class="text-sm mt-1">{{ latest.started_at[:16] }}</div>
+      </div>
+      <div>
+        <div class="text-xs text-white/40 uppercase tracking-wider">Ideas</div>
+        <div class="text-2xl font-semibold tabular-nums">{{ latest.n_ideas }}</div>
+      </div>
+      <div>
+        <div class="text-xs text-white/40 uppercase tracking-wider">Pending</div>
+        <div class="text-2xl font-semibold tabular-nums">{{ latest.n_pending }}</div>
+      </div>
+      <div>
+        <div class="text-xs text-white/40 uppercase tracking-wider">Produced</div>
+        <div class="text-2xl font-semibold tabular-nums text-emerald-300">{{ latest.n_produced }}</div>
+      </div>
+      <div>
+        <div class="text-xs text-white/40 uppercase tracking-wider">Parked / Rejected</div>
+        <div class="text-2xl font-semibold tabular-nums text-white/60">{{ latest.n_parked }} / {{ latest.n_rejected }}</div>
+      </div>
+    </div>
+
+    <div class="mt-6 flex flex-wrap gap-3">
+      <a href="/swipe/{{ latest.id }}" class="btn btn-primary">Triage ideas →</a>
+      <a href="/cycle/{{ latest.id }}" class="btn btn-secondary">Full report</a>
+    </div>
+  </div>
+</section>
+
+<section class="mb-12">
+  <h2 class="text-xl font-semibold mb-4">Ideas in this cycle</h2>
+  <div class="grid md:grid-cols-2 gap-4">
+  {% for item in latest_ideas %}
+    {% set p = item.payload %}
+    <a href="/idea/{{ item.idea_id }}" class="card rounded-xl p-5 block">
+      <div class="flex items-center justify-between mb-2">
+        <span class="pill pill-format">{{ p.format }}</span>
+        <span class="pill pill-fate-{{ item.fate }}">{{ item.fate }}</span>
+      </div>
+      <h3 class="font-medium leading-snug mb-2 line-clamp-2">{{ p.angle }}</h3>
+      <div class="text-xs text-white/40 flex gap-3">
+        <span>conf {{ '%.2f'|format(p.confidence) }}</span>
+        <span>fatigue {{ '%.2f'|format(p.fatigue_score) }}</span>
+        {% if p.title_scores %}<span>top title {{ '%.0f'|format(p.title_scores[0].score) }}</span>{% endif %}
+      </div>
+    </a>
+  {% endfor %}
+  </div>
+</section>
+{% else %}
+<div class="card rounded-2xl p-8 text-white/50">No cycles yet. Run <span class="font-mono">engine collect && engine run</span> to generate one.</div>
+{% endif %}
+
+<section>
+  <h2 class="text-xl font-semibold mb-4">History</h2>
+  <div class="card rounded-xl overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-white/5 text-white/50 text-xs uppercase tracking-wider">
+        <tr>
+          <th class="text-left px-4 py-3 font-medium">Cycle</th>
+          <th class="text-left px-4 py-3 font-medium">Started</th>
+          <th class="text-right px-4 py-3 font-medium">Ideas</th>
+          <th class="text-right px-4 py-3 font-medium">Produced</th>
+          <th class="text-right px-4 py-3 font-medium">Parked</th>
+          <th class="text-right px-4 py-3 font-medium">Rejected</th>
+          <th class="text-left px-4 py-3 font-medium">Notes</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for c in cycles %}
+        <tr class="border-t border-white/5 hover:bg-white/3">
+          <td class="px-4 py-2.5"><a class="link font-mono text-xs" href="/cycle/{{ c.id }}">{{ c.id[:24] }}</a></td>
+          <td class="px-4 py-2.5 text-white/60">{{ c.started_at[:16] }}</td>
+          <td class="px-4 py-2.5 text-right tabular-nums">{{ c.n_ideas }}</td>
+          <td class="px-4 py-2.5 text-right tabular-nums text-emerald-300">{{ c.n_produced }}</td>
+          <td class="px-4 py-2.5 text-right tabular-nums text-amber-300/80">{{ c.n_parked }}</td>
+          <td class="px-4 py-2.5 text-right tabular-nums text-white/40">{{ c.n_rejected }}</td>
+          <td class="px-4 py-2.5 text-white/60 text-xs">{{ c.notes or '' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% endblock %}

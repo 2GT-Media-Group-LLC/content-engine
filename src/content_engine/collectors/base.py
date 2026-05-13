@@ -1,0 +1,95 @@
+"""Base helpers for collectors. Collectors only do I/O — schema validation, dedupe,
+and DB insert. They don't call LLMs."""
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Iterable
+
+from ..db import get_conn, upsert_signal
+from ..schemas import RawSignal, SourcePlatform
+
+
+def ingest_signals(signals: Iterable[RawSignal | dict]) -> int:
+    """Insert raw signals (validated). Returns count newly upserted."""
+    n = 0
+    with get_conn() as conn:
+        for s in signals:
+            if isinstance(s, dict):
+                s = RawSignal.model_validate(s)
+            upsert_signal(conn, s.model_dump(mode="python"))
+            n += 1
+    return n
+
+
+def signals_from_youtube_videos(videos: list[dict], channel: dict) -> list[RawSignal]:
+    """Convert vidiq_channel_videos response items into RawSignals."""
+    out: list[RawSignal] = []
+    channel_handle = channel.get("title") or channel.get("channelTitle") or channel.get("channelId")
+    for v in videos:
+        try:
+            posted_at = datetime.fromisoformat(v["publishedAt"].replace("Z", "+00:00"))
+        except (KeyError, ValueError):
+            posted_at = None
+        out.append(RawSignal(
+            platform=SourcePlatform.youtube,
+            external_id=v["videoId"],
+            url=f"https://youtu.be/{v['videoId']}",
+            author=channel_handle,
+            title=v.get("title") or v.get("videoTitle") or "",
+            body="",  # transcripts come later via vidiq_video_transcript if needed
+            posted_at=posted_at,
+            metrics={
+                "views": v.get("viewCount"),
+                "likes": v.get("likeCount"),
+                "comments": v.get("commentCount"),
+                "vph": v.get("vph"),
+                "engagement_rate": v.get("engagementRate"),
+            },
+            extra={
+                "channel_id": channel.get("channelId") or v.get("channelId"),
+                "channel_title": channel_handle,
+                "duration_sec": v.get("videoDuration"),
+                "is_owned": channel.get("is_owned", False),
+            },
+        ))
+    return out
+
+
+def signals_from_reddit_listing(listing: dict, *, default_subreddit: str | None = None
+                                ) -> list[RawSignal]:
+    """Convert a Reddit listing JSON (kind=Listing, data.children=[...])
+    into RawSignal objects. Tolerant of Composio's slightly varied shapes."""
+    out: list[RawSignal] = []
+    children = (
+        listing.get("data", {}).get("children")
+        or listing.get("children")
+        or []
+    )
+    for ch in children:
+        d = ch.get("data", ch) if isinstance(ch, dict) else {}
+        if not d:
+            continue
+        sub = d.get("subreddit") or default_subreddit or "unknown"
+        created = d.get("created_utc")
+        try:
+            posted_at = datetime.utcfromtimestamp(float(created)) if created else None
+        except (TypeError, ValueError):
+            posted_at = None
+        out.append(RawSignal(
+            platform=SourcePlatform.reddit,
+            external_id=d.get("id") or d.get("name") or d.get("url", ""),
+            url=d.get("url") or (
+                f"https://reddit.com{d['permalink']}" if d.get("permalink") else None
+            ),
+            author=d.get("author"),
+            title=d.get("title"),
+            body=d.get("selftext") or d.get("body") or "",
+            posted_at=posted_at,
+            metrics={
+                "ups": d.get("ups") or d.get("score"),
+                "num_comments": d.get("num_comments"),
+                "upvote_ratio": d.get("upvote_ratio"),
+            },
+            extra={"subreddit": sub, "flair": d.get("link_flair_text")},
+        ))
+    return out

@@ -1,0 +1,1605 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>How the 2GuysTek Content Engine Works</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root { color-scheme: dark; }
+  body {
+    background:
+      radial-gradient(ellipse 80% 50% at 50% -20%, rgba(120,119,198,0.22), transparent),
+      radial-gradient(ellipse 50% 60% at 100% 30%, rgba(217,107,255,0.10), transparent),
+      #0a0a0f;
+    color: #e7e7ee;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+  .card        { background: rgba(255,255,255,0.035); border: 1px solid rgba(255,255,255,0.07); border-radius: 18px; }
+  .card-warm   { background: rgba(245,158,11,0.06); border: 1px solid rgba(245,158,11,0.18); border-radius: 18px; }
+  .card-cool   { background: rgba(120,119,198,0.06); border: 1px solid rgba(120,119,198,0.22); border-radius: 18px; }
+  .pill        { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 11px;
+                 letter-spacing: 0.05em; text-transform: uppercase; font-weight: 500; }
+  .pill-source { background: rgba(255,200,120,0.14); color: #f0d8a8; }
+  .pill-agent  { background: rgba(120,119,198,0.18); color: #c8c5ff; }
+  .pill-output { background: rgba(120,255,180,0.14); color: #a8f0c8; }
+  .glow        { box-shadow: 0 0 0 1px rgba(168,162,247,0.25), 0 0 40px rgba(120,119,198,0.16); }
+  .grad-text   { background: linear-gradient(135deg, #c8c5ff 0%, #f0c8ff 60%, #fed7aa 100%);
+                 -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .grid-bg {
+    background-image:
+      linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+    background-size: 48px 48px;
+  }
+  .arrow {
+    width: 28px; height: 2px;
+    background: linear-gradient(90deg, rgba(168,162,247,0.7), rgba(168,162,247,0.15));
+    position: relative;
+  }
+  .arrow::after {
+    content: ""; position: absolute; right: 0; top: -3px;
+    border-left: 6px solid rgba(168,162,247,0.7);
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+  }
+  .arrow-down {
+    width: 2px; height: 28px;
+    background: linear-gradient(180deg, rgba(168,162,247,0.7), rgba(168,162,247,0.15));
+    margin: 0 auto; position: relative;
+  }
+  .arrow-down::after {
+    content: ""; position: absolute; left: -3px; bottom: 0;
+    border-top: 6px solid rgba(168,162,247,0.7);
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+  }
+  .pulse {
+    width: 10px; height: 10px; border-radius: 50%; background: #a8f0c8;
+    box-shadow: 0 0 0 0 rgba(168,240,200,0.6); animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(168,240,200,0.6); }
+    70%  { box-shadow: 0 0 0 14px rgba(168,240,200,0); }
+    100% { box-shadow: 0 0 0 0 rgba(168,240,200,0); }
+  }
+  .step-num {
+    width: 28px; height: 28px; border-radius: 999px; display: inline-flex;
+    align-items: center; justify-content: center; font-weight: 700;
+    background: linear-gradient(135deg, #7c6bff, #d96bff); color: white;
+    box-shadow: 0 4px 16px rgba(168,162,247,0.3);
+  }
+  details > summary { cursor: pointer; list-style: none; }
+  details > summary::-webkit-details-marker { display: none; }
+
+  /* ─── Print / PDF tuning ─── */
+  @media print {
+    @page { size: Letter; margin: 14mm 12mm; }
+    body { background: #0a0a0f; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .grid-bg { background-image: none; }
+    /* Stop major sections + cards from splitting across pages */
+    section { break-inside: avoid-page; }
+    .card, .card-cool, .card-warm,
+    article, details { break-inside: avoid-page; }
+    /* Open all <details> so PDF shows full agent breakdowns */
+    details { display: block; }
+    details > summary { pointer-events: none; }
+    /* Slight page break before Part II so it lands on its own page */
+    section.border-t-2 { break-before: page; }
+    /* Hide footer noise that doesn't translate to print */
+    .pulse { animation: none; box-shadow: none; }
+  }
+</style>
+</head>
+<body class="antialiased">
+
+<!-- ─── HERO ───────────────────────────────────────────────────────────────── -->
+<section class="grid-bg border-b border-white/5">
+  <div class="max-w-5xl mx-auto px-8 py-24">
+    <div class="text-xs tracking-[0.35em] text-white/40 uppercase mb-4">2GuysTek</div>
+    <h1 class="text-5xl md:text-6xl font-extrabold leading-[1.05] tracking-tight">
+      An AI research team that<br/>never sleeps and never bills.
+    </h1>
+    <p class="mt-8 text-xl md:text-2xl text-white/65 leading-relaxed max-w-3xl">
+      It reads thousands of homelab, self-hosting, AI, and virtualization posts every week.
+      It groups them into trends, weighs what's worth saying, and hands Rich a fresh
+      content brief every Monday morning.
+    </p>
+    <div class="mt-10 flex flex-wrap gap-3">
+      <span class="pill pill-source">5 data streams</span>
+      <span class="pill pill-agent">7 specialist roles</span>
+      <span class="pill pill-output">$0 per run</span>
+      <span class="pill pill-output">runs on one Mac</span>
+    </div>
+  </div>
+</section>
+
+
+<!-- ─── THE 30-SECOND STORY ────────────────────────────────────────────────── -->
+<section class="max-w-5xl mx-auto px-8 py-20">
+  <div class="text-xs tracking-[0.3em] text-white/40 uppercase mb-3">In one paragraph</div>
+  <p class="text-2xl text-white/85 leading-relaxed">
+    Every Sunday at 3 AM, a small program wakes up on Rich's Mac. It scans Reddit, YouTube,
+    Hacker News, a curated list of vendor blogs, and the latest software releases
+    relevant to homelabbers. Then a team of specialized AI workers — each with one job —
+    summarize what they found, find the patterns, decide which patterns matter for 2GuysTek's
+    audience, and write a draft brief: <em class="text-white/95 not-italic font-medium">"here are five videos
+    we could make this week, why each one matters right now, what to title each, and what
+    to read first."</em> Rich opens a private webpage Monday morning, swipes through the
+    ideas, marks the ones he wants to make, and goes to work.
+  </p>
+</section>
+
+
+<!-- ─── THE PROBLEM ────────────────────────────────────────────────────────── -->
+<section class="bg-black/20 border-y border-white/5">
+  <div class="max-w-5xl mx-auto px-8 py-20">
+    <div class="text-xs tracking-[0.3em] text-white/40 uppercase mb-3">Why this exists</div>
+    <h2 class="text-3xl md:text-4xl font-bold mb-6">The information firehose</h2>
+    <div class="grid md:grid-cols-2 gap-8 text-white/75 leading-relaxed">
+      <p>
+        In any given week, ten thousand voices in homelab / self-hosting / AI / virtualization
+        publish, post, debate, and ship new tools. New Proxmox release. Reddit thread about
+        a security flaw. Lawrence Systems just covered Tailscale. A vendor blog announced
+        end-of-life for a product half your audience uses.
+      </p>
+      <p>
+        No human can read all of it. Even spending an hour every morning, you miss the
+        important things and waste time on noise. So Rich built — with help — an automated
+        research team that does the reading <em class="text-white/95">for</em> him, then
+        hands him a short, prioritized list to react to.
+      </p>
+    </div>
+  </div>
+</section>
+
+
+<!-- ─── THE 5 STREAMS ──────────────────────────────────────────────────────── -->
+<section class="max-w-5xl mx-auto px-8 py-20">
+  <div class="text-xs tracking-[0.3em] text-white/40 uppercase mb-3">Step 1 — Listening</div>
+  <h2 class="text-3xl md:text-4xl font-bold mb-3">Five data streams, autonomous</h2>
+  <p class="text-white/65 max-w-3xl mb-10">
+    Five different kinds of signal, all pulled automatically — no person logs into anything.
+    Each stream catches a different kind of story.
+  </p>
+  <div class="grid md:grid-cols-2 gap-5">
+    <div class="card p-6">
+      <div class="flex items-center justify-between mb-3">
+        <div class="text-3xl">🟠</div>
+        <span class="pill pill-source">community pulse</span>
+      </div>
+      <h3 class="text-xl font-semibold mb-2">Reddit</h3>
+      <p class="text-sm text-white/65 leading-relaxed">
+        The top posts from eight niche subreddits — <span class="text-white/85 font-mono text-xs">r/homelab</span>,
+        <span class="text-white/85 font-mono text-xs">r/selfhosted</span>, <span class="text-white/85 font-mono text-xs">r/Proxmox</span>,
+        <span class="text-white/85 font-mono text-xs">r/LocalLLaMA</span>, and four more. This is where the audience
+        argues, complains, and praises in their own words.
+      </p>
+    </div>
+
+    <div class="card p-6">
+      <div class="flex items-center justify-between mb-3">
+        <div class="text-3xl">📺</div>
+        <span class="pill pill-source">peer signal</span>
+      </div>
+      <h3 class="text-xl font-semibold mb-2">YouTube</h3>
+      <p class="text-sm text-white/65 leading-relaxed">
+        Recent videos from 2GuysTek plus four peer channels — Tom Lawrence, Craft Computing,
+        Jeff Geerling, ServeTheHome. So the system knows what other creators in the niche
+        just covered (and what 2GT shouldn't redundantly chase).
+      </p>
+    </div>
+
+    <div class="card p-6">
+      <div class="flex items-center justify-between mb-3">
+        <div class="text-3xl">📰</div>
+        <span class="pill pill-source">authoritative news</span>
+      </div>
+      <h3 class="text-xl font-semibold mb-2">Vendor blogs &amp; tech press</h3>
+      <p class="text-sm text-white/65 leading-relaxed">
+        Official news from the companies behind the tools — XCP-ng, Vates, Veeam, Tailscale,
+        Ubiquiti, Canonical — plus Phoronix, The Register, and Ars Technica IT. This is
+        where you find out about a release <em>before</em> Reddit gets mad about it.
+      </p>
+    </div>
+
+    <div class="card p-6">
+      <div class="flex items-center justify-between mb-3">
+        <div class="text-3xl">🟡</div>
+        <span class="pill pill-source">technical zeitgeist</span>
+      </div>
+      <h3 class="text-xl font-semibold mb-2">Hacker News</h3>
+      <p class="text-sm text-white/65 leading-relaxed">
+        The biggest tech forum on the internet, filtered for stories that match 2GT's niche.
+        High-engagement stories here often predict what'll be on Reddit in a day or two.
+      </p>
+    </div>
+
+    <div class="card p-6 md:col-span-2">
+      <div class="flex items-center justify-between mb-3">
+        <div class="text-3xl">🐙</div>
+        <span class="pill pill-source">release pulse</span>
+      </div>
+      <h3 class="text-xl font-semibold mb-2">GitHub releases</h3>
+      <p class="text-sm text-white/65 leading-relaxed">
+        New versions of seventeen open-source tools the 2GT audience actually runs —
+        Ollama, llama.cpp, Vaultwarden, Immich, Home Assistant, Tailscale, Nextcloud,
+        Pi-hole, OPNsense, and more. The instant a new version ships, the engine knows.
+      </p>
+    </div>
+  </div>
+
+  <div class="card-cool p-6 mt-8">
+    <div class="flex items-baseline justify-between gap-6 flex-wrap">
+      <div>
+        <div class="text-xs tracking-[0.3em] text-white/40 uppercase mb-2">Live count</div>
+        <div class="text-2xl font-semibold">377 signals in the database right now</div>
+      </div>
+      <div class="flex gap-6 text-sm font-mono">
+        <div><span class="text-white/40">reddit</span> <span class="text-white/90">161</span></div>
+        <div><span class="text-white/40">youtube</span> <span class="text-white/90">86</span></div>
+        <div><span class="text-white/40">blog</span> <span class="text-white/90">68</span></div>
+        <div><span class="text-white/40">hackernews</span> <span class="text-white/90">32</span></div>
+        <div><span class="text-white/40">github</span> <span class="text-white/90">30</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ─── THE PIPELINE ──────────────────────────────────────────────────────── -->
+<section class="bg-black/20 border-y border-white/5">
+  <div class="max-w-5xl mx-auto px-8 py-20">
+    <div class="text-xs tracking-[0.3em] text-white/40 uppercase mb-3">Steps 2 through 7 — Making sense of it</div>
+    <h2 class="text-3xl md:text-4xl font-bold mb-3">The assembly line</h2>
+    <p class="text-white/65 max-w-3xl mb-12">
+      Once a week, the engine walks every collected post through this assembly line.
+      Each stop is a specialized AI worker with one job.
+    </p>
+
+    <div class="space-y-4">
+      <!-- Each stage -->
+      <div class="card p-5 flex items-start gap-5">
+        <div class="step-num shrink-0 mt-0.5">1</div>
+        <div class="flex-1">
+          <div class="flex items-center gap-3 mb-1 flex-wrap">
+            <h3 class="text-lg font-semibold">Summarize each item</h3>
+            <span class="pill pill-agent">~10 seconds each</span>
+          </div>
+          <p class="text-sm text-white/70 leading-relaxed">
+            For every Reddit post, YouTube title, blog entry, HN story, and GitHub release: an AI
+            worker reads it and writes a one-sentence summary + a few key points + topic
+            tags + a sentiment score (positive / neutral / negative) + a freshness score
+            (is this brand new, or has the internet been debating it for years).
+          </p>
+        </div>
+      </div>
+      <div class="arrow-down"></div>
+
+      <div class="card p-5 flex items-start gap-5">
+        <div class="step-num shrink-0 mt-0.5">2</div>
+        <div class="flex-1">
+          <div class="flex items-center gap-3 mb-1 flex-wrap">
+            <h3 class="text-lg font-semibold">Group related items into trends</h3>
+            <span class="pill pill-agent">math, not magic</span>
+          </div>
+          <p class="text-sm text-white/70 leading-relaxed">
+            Many summaries are about the same underlying story. A Proxmox kernel bug shows up in a
+            Reddit thread, a Lawrence Systems video, a Phoronix article, and a forum post. The
+            engine measures the similarity between all 377 summaries and clusters the related
+            ones into <em>trends</em>. The Proxmox kernel cluster gets stronger as more sources
+            mention it — that's signal that it's worth talking about.
+          </p>
+        </div>
+      </div>
+      <div class="arrow-down"></div>
+
+      <div class="card p-5 flex items-start gap-5">
+        <div class="step-num shrink-0 mt-0.5">3</div>
+        <div class="flex-1">
+          <div class="flex items-center gap-3 mb-1 flex-wrap">
+            <h3 class="text-lg font-semibold">Pick the hottest, most diverse trends</h3>
+            <span class="pill pill-agent">heat × novelty × recency</span>
+          </div>
+          <p class="text-sm text-white/70 leading-relaxed">
+            From dozens of trends, pick the most worth covering. Hotness = how many sources are
+            talking about it, how new the story is, and how recently it broke. <strong>And it
+            enforces topic diversity</strong>: it won't hand back five AI ideas in a row. One
+            from homelab, one from security, one from virtualization, one from AI, one from
+            networking. Audience gets variety.
+          </p>
+        </div>
+      </div>
+      <div class="arrow-down"></div>
+
+      <div class="card p-5 flex items-start gap-5">
+        <div class="step-num shrink-0 mt-0.5">4</div>
+        <div class="flex-1">
+          <div class="flex items-center gap-3 mb-1 flex-wrap">
+            <h3 class="text-lg font-semibold">Turn trends into actual video ideas</h3>
+            <span class="pill pill-agent">the strategist</span>
+          </div>
+          <p class="text-sm text-white/70 leading-relaxed">
+            For each chosen trend, the strategist AI writes a sharp video angle — not "Top 10
+            Proxmox Tips" but <em class="text-white/90">"Why I downgraded Proxmox's kernel after
+            Tailscale broke — and why you might need to too"</em>. It explains why now,
+            estimates audience fit, drafts 3–5 candidate titles, sketches thumbnail ideas,
+            and flags any divisive risks (AI topics and Proxmox criticism both get auto-tagged
+            because the audience is opinionated about both).
+          </p>
+        </div>
+      </div>
+      <div class="arrow-down"></div>
+
+      <div class="card p-5 flex items-start gap-5">
+        <div class="step-num shrink-0 mt-0.5">5</div>
+        <div class="flex-1">
+          <div class="flex items-center gap-3 mb-1 flex-wrap">
+            <h3 class="text-lg font-semibold">Draft a script outline + sources to verify</h3>
+            <span class="pill pill-agent">the outline writer</span>
+          </div>
+          <p class="text-sm text-white/70 leading-relaxed">
+            For the top three ideas, a second AI drafts an actual outline: a cold-open hook,
+            five to seven sections with timing estimates, beat-by-beat talking points, B-roll
+            suggestions, a closing call-to-action, and — crucially — a list of links Rich
+            should read or watch <em>before</em> writing the script, plus an "open questions"
+            list of things to verify. The outline writer is trained on Rich's own past scripts
+            so the voice and rhythm sound like him.
+          </p>
+        </div>
+      </div>
+      <div class="arrow-down"></div>
+
+      <div class="card p-5 flex items-start gap-5">
+        <div class="step-num shrink-0 mt-0.5">6</div>
+        <div class="flex-1">
+          <div class="flex items-center gap-3 mb-1 flex-wrap">
+            <h3 class="text-lg font-semibold">Score the titles &amp; verify every citation</h3>
+            <span class="pill pill-agent">the fact checker</span>
+          </div>
+          <p class="text-sm text-white/70 leading-relaxed">
+            Each candidate title gets scored 0-100 on click-worthiness based on what's worked
+            for 2GT before. A separate worker then double-checks every URL the outline
+            recommends as a source — if a link wasn't in the original signals (i.e. the AI
+            made it up), it gets flagged as "unverified, check before quoting." This catches
+            AI hallucination before it ever reaches a script.
+          </p>
+        </div>
+      </div>
+      <div class="arrow-down"></div>
+
+      <div class="card-cool p-5 flex items-start gap-5 glow">
+        <div class="step-num shrink-0 mt-0.5">7</div>
+        <div class="flex-1">
+          <div class="flex items-center gap-3 mb-1 flex-wrap">
+            <h3 class="text-lg font-semibold">Render a beautiful brief</h3>
+            <span class="pill pill-output">delivered</span>
+          </div>
+          <p class="text-sm text-white/70 leading-relaxed">
+            Everything gets stitched into a polished web page Rich opens on Monday morning.
+            Five ideas, each with the angle, why now, ranked titles, thumbnail concepts,
+            cross-post copy for Instagram/LinkedIn/Discord, a full outline for the top
+            three, and the sources to read. Total time from "wake up at 3 AM" to "brief
+            ready": about 10 minutes.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ─── MEET THE TEAM ──────────────────────────────────────────────────────── -->
+<section class="max-w-5xl mx-auto px-8 py-20">
+  <div class="text-xs tracking-[0.3em] text-white/40 uppercase mb-3">The team</div>
+  <h2 class="text-3xl md:text-4xl font-bold mb-3">Specialists, not generalists</h2>
+  <p class="text-white/65 max-w-3xl mb-10">
+    No single AI does the whole job. Instead, seven specialists each do one thing well.
+    Smaller and faster for easy tasks; bigger and slower only where it counts.
+  </p>
+
+  <div class="grid md:grid-cols-2 gap-5">
+    <div class="card p-6">
+      <div class="text-3xl mb-3">📖</div>
+      <h3 class="text-lg font-semibold">The Reader</h3>
+      <p class="text-sm text-white/65 leading-relaxed mb-3">
+        Reads every incoming post. Produces a one-sentence summary, key points, topics, and
+        sentiment for each. Fast and cheap because it does it 200 times a week.
+      </p>
+      <div class="text-xs text-white/40 font-mono">Gemma 4 (8B) · ~10 sec each</div>
+    </div>
+
+    <div class="card p-6">
+      <div class="text-3xl mb-3">🔗</div>
+      <h3 class="text-lg font-semibold">The Cataloger</h3>
+      <p class="text-sm text-white/65 leading-relaxed mb-3">
+        Doesn't read — it <em>compares</em>. Converts every summary into a mathematical
+        fingerprint and finds which ones are about the same underlying story.
+      </p>
+      <div class="text-xs text-white/40 font-mono">embeddings · &lt; 1 sec each</div>
+    </div>
+
+    <div class="card p-6">
+      <div class="text-3xl mb-3">🏷️</div>
+      <h3 class="text-lg font-semibold">The Labeler</h3>
+      <p class="text-sm text-white/65 leading-relaxed mb-3">
+        Looks at each cluster and gives it a short, descriptive name plus picks the most
+        evocative quote from inside it. Helps Rich understand at a glance what the trend is.
+      </p>
+      <div class="text-xs text-white/40 font-mono">Gemma 4 (2B) · ~5 sec each</div>
+    </div>
+
+    <div class="card p-6">
+      <div class="text-3xl mb-3">🎯</div>
+      <h3 class="text-lg font-semibold">The Strategist</h3>
+      <p class="text-sm text-white/65 leading-relaxed mb-3">
+        The lead creative. Looks at a trend and asks "what's the 2GT angle here?" Knows
+        the channel's voice, what's worked before, and what topics are divisive. Writes
+        the actual idea pitch.
+      </p>
+      <div class="text-xs text-white/40 font-mono">Qwen 3 (30B) · ~12 sec per idea</div>
+    </div>
+
+    <div class="card p-6">
+      <div class="text-3xl mb-3">📝</div>
+      <h3 class="text-lg font-semibold">The Outline Writer</h3>
+      <p class="text-sm text-white/65 leading-relaxed mb-3">
+        For each green-lit idea, drafts a full beat-by-beat script outline including the
+        cold open, B-roll, CTA, and a list of things to research first. Trained on the
+        cadence of Rich's own scripts.
+      </p>
+      <div class="text-xs text-white/40 font-mono">Qwen 3 (30B) · ~30 sec each</div>
+    </div>
+
+    <div class="card p-6">
+      <div class="text-3xl mb-3">✏️</div>
+      <h3 class="text-lg font-semibold">The Editor</h3>
+      <p class="text-sm text-white/65 leading-relaxed mb-3">
+        Rewrites the prose passes from the Strategist and Outline Writer for fluency.
+        Catches doubled words, awkward phrasing, and the small artifacts that small AI
+        models sometimes produce.
+      </p>
+      <div class="text-xs text-white/40 font-mono">Qwen 3 (30B) · ~2 sec per field</div>
+    </div>
+
+    <div class="card p-6 md:col-span-2">
+      <div class="text-3xl mb-3">🔍</div>
+      <h3 class="text-lg font-semibold">The Fact Checker</h3>
+      <p class="text-sm text-white/65 leading-relaxed mb-3">
+        Not an AI — just plain logic. Goes through every URL the Outline Writer cites
+        and confirms it was actually in the original signals. Anything else gets flagged
+        with a visible "unverified" warning. AI models hallucinate citations; this catches it.
+      </p>
+      <div class="text-xs text-white/40 font-mono">deterministic code · &lt; 1 sec</div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ─── THE BRAIN ──────────────────────────────────────────────────────────── -->
+<section class="bg-black/20 border-y border-white/5">
+  <div class="max-w-5xl mx-auto px-8 py-20">
+    <div class="text-xs tracking-[0.3em] text-white/40 uppercase mb-3">Where the AI lives</div>
+    <h2 class="text-3xl md:text-4xl font-bold mb-3">On Rich's desk. Not in the cloud.</h2>
+    <div class="grid md:grid-cols-2 gap-10 mt-10">
+      <div>
+        <p class="text-white/75 leading-relaxed mb-5">
+          Everything you've read about so far runs on one Mac sitting in Rich's office.
+          The AI models — Google's Gemma and Alibaba's Qwen — are open-source and live entirely
+          on the local hard drive. None of the data ever leaves the building.
+        </p>
+        <p class="text-white/75 leading-relaxed">
+          That matters for three reasons. <strong class="text-white/95">Cost:</strong> every
+          weekly run costs zero dollars. <strong class="text-white/95">Privacy:</strong> 2GT's
+          analytics, scripts, and editorial decisions stay private. <strong class="text-white/95">Speed:</strong>
+          no waiting on someone else's API.
+        </p>
+      </div>
+
+      <div class="card p-7">
+        <div class="text-xs tracking-[0.3em] text-white/40 uppercase mb-4">Hardware</div>
+        <div class="space-y-3 text-sm">
+          <div class="flex justify-between">
+            <span class="text-white/60">Machine</span><span class="text-white/90">Apple M5 Max</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-white/60">Memory</span><span class="text-white/90">48 GB unified</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-white/60">AI models loaded</span><span class="text-white/90">Gemma 4, Qwen 3</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-white/60">Total storage used</span><span class="text-white/90">~50 GB</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-white/60">Cost per weekly run</span><span class="text-emerald-300 font-semibold">$0.00</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-white/60">Internet required</span><span class="text-white/90">only to fetch data</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ─── THE WORKFLOW ──────────────────────────────────────────────────────── -->
+<section class="max-w-5xl mx-auto px-8 py-20">
+  <div class="text-xs tracking-[0.3em] text-white/40 uppercase mb-3">Rich's Monday morning</div>
+  <h2 class="text-3xl md:text-4xl font-bold mb-3">The human in the loop</h2>
+  <p class="text-white/65 max-w-3xl mb-10">
+    The engine doesn't <em>decide</em> anything. It <em>recommends</em>. Rich makes every
+    final call.
+  </p>
+
+  <div class="grid md:grid-cols-3 gap-5">
+    <div class="card p-6">
+      <div class="step-num mb-4">A</div>
+      <h3 class="font-semibold mb-2">Open the dashboard</h3>
+      <p class="text-sm text-white/65 leading-relaxed">
+        A private webpage on his Mac shows the latest brief at the top. He sees five
+        ranked ideas, the three with full outlines, a line on what worked recently on
+        the channel.
+      </p>
+    </div>
+
+    <div class="card p-6">
+      <div class="step-num mb-4">B</div>
+      <h3 class="font-semibold mb-2">Swipe through</h3>
+      <p class="text-sm text-white/65 leading-relaxed">
+        For each idea: <span class="text-emerald-300">✓ Producing</span> /
+        <span class="text-amber-300">🅿 Park</span> /
+        <span class="text-red-300">✗ Reject</span>. Optional reason. The engine
+        remembers and won't pitch the same angle again unless something significant happens.
+      </p>
+    </div>
+
+    <div class="card p-6">
+      <div class="step-num mb-4">C</div>
+      <h3 class="font-semibold mb-2">Track produced videos</h3>
+      <p class="text-sm text-white/65 leading-relaxed">
+        When a green-lit idea becomes a real video, Rich pastes the YouTube ID into the
+        dashboard. The engine then tracks how well it performs — and uses that to make
+        future recommendations sharper.
+      </p>
+    </div>
+  </div>
+
+  <div class="card-cool p-6 mt-8">
+    <div class="flex items-start gap-4">
+      <div class="pulse mt-2 shrink-0"></div>
+      <div>
+        <div class="font-semibold mb-1">The feedback loop</div>
+        <p class="text-sm text-white/70 leading-relaxed">
+          Every fate Rich marks teaches the engine. Every video he produces gets its
+          views, watch-time, and engagement fed back in. Over weeks and months, the engine's
+          recommendations get more aligned with what actually works for 2GuysTek's audience —
+          without ever losing Rich's voice or editorial judgment.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ─── BY THE NUMBERS ─────────────────────────────────────────────────────── -->
+<section class="bg-black/20 border-y border-white/5">
+  <div class="max-w-5xl mx-auto px-8 py-20">
+    <div class="text-xs tracking-[0.3em] text-white/40 uppercase mb-3">Where it is today</div>
+    <h2 class="text-3xl md:text-4xl font-bold mb-10">By the numbers</h2>
+
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-5">
+      <div class="card p-6">
+        <div class="text-4xl font-bold grad-text">377</div>
+        <div class="text-xs text-white/50 uppercase tracking-wider mt-2">signals in the database</div>
+      </div>
+      <div class="card p-6">
+        <div class="text-4xl font-bold grad-text">5</div>
+        <div class="text-xs text-white/50 uppercase tracking-wider mt-2">independent data streams</div>
+      </div>
+      <div class="card p-6">
+        <div class="text-4xl font-bold grad-text">10</div>
+        <div class="text-xs text-white/50 uppercase tracking-wider mt-2">completed pipeline runs</div>
+      </div>
+      <div class="card p-6">
+        <div class="text-4xl font-bold grad-text">52</div>
+        <div class="text-xs text-white/50 uppercase tracking-wider mt-2">ideas generated to date</div>
+      </div>
+      <div class="card p-6">
+        <div class="text-4xl font-bold grad-text">~10</div>
+        <div class="text-xs text-white/50 uppercase tracking-wider mt-2">minutes per weekly run</div>
+      </div>
+      <div class="card p-6">
+        <div class="text-4xl font-bold grad-text">7</div>
+        <div class="text-xs text-white/50 uppercase tracking-wider mt-2">specialist AI workers</div>
+      </div>
+      <div class="card p-6">
+        <div class="text-4xl font-bold grad-text">$0</div>
+        <div class="text-xs text-white/50 uppercase tracking-wider mt-2">cost per run, every run</div>
+      </div>
+      <div class="card p-6">
+        <div class="text-4xl font-bold grad-text">0</div>
+        <div class="text-xs text-white/50 uppercase tracking-wider mt-2">data sent to outside AI services</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ─── WHY IT'S NOT JUST AI WRITING SLOP ─────────────────────────────────── -->
+<section class="max-w-5xl mx-auto px-8 py-20">
+  <div class="text-xs tracking-[0.3em] text-white/40 uppercase mb-3">An important point</div>
+  <h2 class="text-3xl md:text-4xl font-bold mb-6">This doesn't write videos. It does the homework.</h2>
+  <div class="grid md:grid-cols-2 gap-8 text-white/75 leading-relaxed">
+    <div>
+      <p class="mb-4">
+        The engine never makes scripts. It never makes thumbnails. It never publishes anything.
+      </p>
+      <p>
+        What it does is read everything Rich would <em>want</em> to read if he had unlimited
+        time, find the threads worth pulling on, and hand him a starting point. Every angle,
+        title, outline, and source is a draft — Rich rewrites, rearranges, kills, or replaces
+        anything that doesn't fit.
+      </p>
+    </div>
+    <div>
+      <p class="mb-4">
+        Think of it less like an AI ghostwriter and more like having a research team that
+        works overnight: you get a stack of folders Monday morning, each with a topic, why
+        it matters, and the homework already done. You're still the one on camera. You're
+        still the one whose taste matters.
+      </p>
+      <p>
+        Critically, every AI-generated citation gets a verification flag.
+        If the engine made something up, you see "⚠ unverified" before you read it.
+        No surprise hallucinations.
+      </p>
+    </div>
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- ═══   ENGINEERING NOTES — for the technical reader              ═══ -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+
+<section class="border-t-2 border-violet-400/30 bg-black/40">
+  <div class="max-w-5xl mx-auto px-8 py-24">
+    <div class="text-xs tracking-[0.4em] text-violet-300/80 uppercase mb-3">Part II</div>
+    <h2 class="text-4xl md:text-5xl font-extrabold mb-4 grad-text">Engineering notes</h2>
+    <p class="text-lg text-white/65 leading-relaxed max-w-3xl">
+      Everything above is the executive summary. What follows is the technical version
+      for readers who want to see the actual architecture: the pipeline orchestration,
+      the agent contracts, the model routing decisions, the math, the data model,
+      and the observability surface.
+    </p>
+  </div>
+</section>
+
+
+<!-- ─── ARCHITECTURE MAP ──────────────────────────────────────────────────── -->
+<section class="max-w-5xl mx-auto px-8 py-16">
+  <div class="text-xs tracking-[0.3em] text-white/40 uppercase mb-3">Architecture</div>
+  <h3 class="text-2xl md:text-3xl font-bold mb-3">Module map</h3>
+  <p class="text-white/65 mb-8 max-w-3xl">
+    A Python package (<span class="font-mono text-sm text-violet-300">content_engine</span>) with
+    five layers. Each layer has a clear contract with the next. The orchestrator chains them
+    in a fixed weekly DAG.
+  </p>
+
+  <div class="card p-6 font-mono text-xs md:text-sm leading-relaxed overflow-x-auto">
+<pre class="text-white/75">
+content_engine/
+├── <span class="text-violet-300">collectors/</span>          ─── inbound I/O, one module per source
+│   ├── reddit.py          → reddit.com/r/X/top.json (no auth)
+│   ├── youtube.py         → Composio→YOUTUBE_LIST_CHANNEL_VIDEOS
+│   ├── feeds.py           → feedparser over RSS/Atom (data/feeds.yaml)
+│   ├── hackernews.py      → hn.algolia.com/api/v1/search_by_date
+│   ├── github_releases.py → api.github.com/repos/&lt;repo&gt;/releases
+│   └── composio_client.py → auto-attaches connected_account by toolkit
+│
+├── <span class="text-violet-300">processors/</span>         ─── transform raw signals into structured state
+│   ├── summarize.py       → per-signal Pydantic-validated extraction
+│   └── cluster.py         → embed → cosine → agglomerative → label
+│
+├── <span class="text-violet-300">synthesizers/</span>       ─── generate the actual brief
+│   ├── ideas.py           → topic-diversified IdeaCandidate per cluster
+│   ├── outlines.py        → ScriptOutline per top-N idea
+│   ├── editor.py          → unconstrained-mode prose polish + artifact regex
+│   ├── citation_verifier.py → URL whitelist check (deterministic, no LLM)
+│   ├── title_scorer.py    → vidiq OR heuristic CTR scoring per title
+│   └── voice.py           → one-shot voice-guide extraction from scripts
+│
+├── <span class="text-violet-300">reports/</span>            ─── styled HTML render
+│   └── render.py          → Jinja2 → reports/weekly_&lt;cycle&gt;.html
+│
+├── <span class="text-violet-300">web/</span>                ─── FastAPI feedback UI (separate process)
+│   └── app.py             → dashboard, swipe triage, run trigger
+│
+├── <span class="text-violet-300">eval.py</span>             ─── golden test harness (tests/golden/)
+├── <span class="text-violet-300">ollama_client.py</span>    ─── HTTP harness: structured output + escalation
+├── <span class="text-violet-300">pipeline.py</span>         ─── orchestrator: collect→summarize→cluster→ideate→outline→render
+├── <span class="text-violet-300">schemas.py</span>          ─── Pydantic contracts for every agent I/O
+├── <span class="text-violet-300">db.py</span>               ─── SQLite layer (WAL, 8 tables)
+├── <span class="text-violet-300">config.py</span>           ─── Settings (frozen dataclass), ENV via dotenv
+└── <span class="text-violet-300">cli.py</span>              ─── Typer entry: collect / run / gui / eval / polish / ...
+</pre>
+  </div>
+
+  <div class="grid md:grid-cols-3 gap-4 mt-6 text-sm">
+    <div class="card p-4">
+      <div class="text-xs text-white/40 uppercase tracking-wider mb-2">Language</div>
+      <div class="font-mono">Python 3.14</div>
+    </div>
+    <div class="card p-4">
+      <div class="text-xs text-white/40 uppercase tracking-wider mb-2">Storage</div>
+      <div class="font-mono">SQLite (WAL) + LanceDB</div>
+    </div>
+    <div class="card p-4">
+      <div class="text-xs text-white/40 uppercase tracking-wider mb-2">Inference</div>
+      <div class="font-mono">Ollama (local)</div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ─── MODEL ROUTING TABLE ───────────────────────────────────────────────── -->
+<section class="bg-black/30 border-y border-white/5">
+  <div class="max-w-5xl mx-auto px-8 py-16">
+    <div class="text-xs tracking-[0.3em] text-white/40 uppercase mb-3">Model routing</div>
+    <h3 class="text-2xl md:text-3xl font-bold mb-3">Five tiers, one philosophy</h3>
+    <p class="text-white/65 mb-8 max-w-3xl">
+      Use the smallest model that can do the job, escalate on low confidence or schema-validation
+      failure. Embedding is its own dedicated model. All running locally on Apple Silicon via
+      Ollama (Metal backend).
+    </p>
+
+    <div class="card overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-white/5 text-white/50 text-xs uppercase tracking-wider">
+          <tr>
+            <th class="text-left px-4 py-3 font-medium">Tier</th>
+            <th class="text-left px-4 py-3 font-medium">Model</th>
+            <th class="text-right px-4 py-3 font-medium">Params</th>
+            <th class="text-right px-4 py-3 font-medium">Quant</th>
+            <th class="text-right px-4 py-3 font-medium">Disk</th>
+            <th class="text-left px-4 py-3 font-medium">Used for</th>
+          </tr>
+        </thead>
+        <tbody class="font-mono text-xs">
+          <tr class="border-t border-white/5">
+            <td class="px-4 py-3 text-white/85">embed</td>
+            <td class="px-4 py-3 text-violet-300">nomic-embed-text</td>
+            <td class="px-4 py-3 text-right text-white/65">137M</td>
+            <td class="px-4 py-3 text-right text-white/65">F16</td>
+            <td class="px-4 py-3 text-right text-white/65">274 MB</td>
+            <td class="px-4 py-3 text-white/75 font-sans">summary → vector for cluster dedupe</td>
+          </tr>
+          <tr class="border-t border-white/5">
+            <td class="px-4 py-3 text-white/85">fast</td>
+            <td class="px-4 py-3 text-violet-300">gemma4:e2b</td>
+            <td class="px-4 py-3 text-right text-white/65">~2B effective</td>
+            <td class="px-4 py-3 text-right text-white/65">Q4_K_M</td>
+            <td class="px-4 py-3 text-right text-white/65">~2 GB</td>
+            <td class="px-4 py-3 text-white/75 font-sans">cluster labels, triage classification</td>
+          </tr>
+          <tr class="border-t border-white/5">
+            <td class="px-4 py-3 text-white/85">mid</td>
+            <td class="px-4 py-3 text-violet-300">gemma4:e4b</td>
+            <td class="px-4 py-3 text-right text-white/65">~8B</td>
+            <td class="px-4 py-3 text-right text-white/65">Q4_K_M</td>
+            <td class="px-4 py-3 text-right text-white/65">9.6 GB</td>
+            <td class="px-4 py-3 text-white/75 font-sans">per-signal structured summarization</td>
+          </tr>
+          <tr class="border-t border-white/5">
+            <td class="px-4 py-3 text-white/85">heavy</td>
+            <td class="px-4 py-3 text-violet-300">qwen3:30b-a3b-instruct-2507</td>
+            <td class="px-4 py-3 text-right text-white/65">30B MoE (3B active)</td>
+            <td class="px-4 py-3 text-right text-white/65">Q8_0</td>
+            <td class="px-4 py-3 text-right text-white/65">33 GB</td>
+            <td class="px-4 py-3 text-white/75 font-sans">idea + outline synthesis (JSON mode)</td>
+          </tr>
+          <tr class="border-t border-white/5">
+            <td class="px-4 py-3 text-white/85">polish</td>
+            <td class="px-4 py-3 text-violet-300">qwen3:30b-a3b-instruct-2507</td>
+            <td class="px-4 py-3 text-right text-white/65">30B MoE (3B active)</td>
+            <td class="px-4 py-3 text-right text-white/65">Q8_0</td>
+            <td class="px-4 py-3 text-right text-white/65">(shared)</td>
+            <td class="px-4 py-3 text-white/75 font-sans">unconstrained prose rewrite</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="mt-6 grid md:grid-cols-2 gap-5 text-sm text-white/70 leading-relaxed">
+      <div class="card p-5">
+        <div class="text-xs text-white/40 uppercase tracking-wider mb-2">Why MoE for heavy</div>
+        Qwen 3 30B-A3B is a 30B-parameter mixture-of-experts model with ~3B active per token.
+        Inference cost scales with active params, so it runs roughly as fast as a 3B dense
+        model on Apple Silicon while keeping 30B-class reasoning quality. Replaced dense
+        Gemma 4 31B Q8 after a single Q8 call took 540 s vs 10 s on the MoE.
+      </div>
+      <div class="card p-5">
+        <div class="text-xs text-white/40 uppercase tracking-wider mb-2">Why a separate polish tier</div>
+        Structured-output (Ollama <code class="text-violet-300">format=schema</code>) calls
+        bake JSON tokens into every decoding step, which the smaller Q4 models do well enough
+        but produce occasional artifacts (doubled words, leaked syntax). The polish pass
+        re-runs the prose-only fields in <em>unconstrained</em> mode — Q8 MoE, free-form
+        generation — and merges back into the schema.
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ─── AGENT-BY-AGENT BREAKDOWN ─────────────────────────────────────────── -->
+<section class="max-w-5xl mx-auto px-8 py-16">
+  <div class="text-xs tracking-[0.3em] text-white/40 uppercase mb-3">The agents in detail</div>
+  <h3 class="text-2xl md:text-3xl font-bold mb-3">Seven workers, hard contracts</h3>
+  <p class="text-white/65 mb-10 max-w-3xl">
+    Every agent has a Pydantic input/output contract validated on the way in <em>and</em>
+    out. A parse failure is a signal to escalate, not to retry blindly. All telemetry
+    (input hash, output, confidence, latency, errors, escalations) is logged to
+    <span class="font-mono text-violet-300">agent_runs</span> for eval and regression detection.
+  </p>
+
+  <div class="space-y-5">
+
+    <!-- 1. summarize_signal -->
+    <details class="card p-6" open>
+      <summary class="flex items-baseline justify-between gap-4 flex-wrap">
+        <div class="flex items-baseline gap-3 flex-wrap">
+          <h4 class="text-xl font-semibold">summarize_signal</h4>
+          <span class="pill pill-agent">mid → heavy on escalation</span>
+        </div>
+        <span class="text-xs text-white/40 font-mono">processors/summarize.py</span>
+      </summary>
+      <div class="mt-5 grid md:grid-cols-3 gap-5 text-sm">
+        <div>
+          <div class="text-xs text-white/40 uppercase tracking-wider mb-2">Input</div>
+          <div class="font-mono text-xs text-white/85">RawSignal row</div>
+          <p class="text-white/65 mt-2">platform, title, url, body (truncated to 6KB), metrics, author, posted_at</p>
+        </div>
+        <div>
+          <div class="text-xs text-white/40 uppercase tracking-wider mb-2">Output schema</div>
+          <div class="font-mono text-xs text-emerald-300">SignalSummary</div>
+          <ul class="text-white/65 mt-2 space-y-1">
+            <li>· one_line (≤200 chars)</li>
+            <li>· key_points (1-5)</li>
+            <li>· topics (1-4 from TopicTag enum)</li>
+            <li>· sentiment (5-level enum)</li>
+            <li>· novelty (0-1)</li>
+            <li>· confidence (0-1)</li>
+          </ul>
+        </div>
+        <div>
+          <div class="text-xs text-white/40 uppercase tracking-wider mb-2">Strategy</div>
+          <p class="text-white/65">
+            Ollama JSON mode with the schema enforced. Prompt is in
+            <span class="font-mono text-xs">prompts/summarize_signal.txt</span>.
+            Confidence &lt; 0.55 triggers retry with the heavy tier.
+            Run latency target: 8-12s on gemma4:e4b.
+          </p>
+        </div>
+      </div>
+    </details>
+
+    <!-- 2. cluster_label -->
+    <details class="card p-6">
+      <summary class="flex items-baseline justify-between gap-4 flex-wrap">
+        <div class="flex items-baseline gap-3 flex-wrap">
+          <h4 class="text-xl font-semibold">cluster_label</h4>
+          <span class="pill pill-agent">fast tier</span>
+        </div>
+        <span class="text-xs text-white/40 font-mono">processors/cluster.py</span>
+      </summary>
+      <div class="mt-5 grid md:grid-cols-3 gap-5 text-sm">
+        <div>
+          <div class="text-xs text-white/40 uppercase tracking-wider mb-2">Input</div>
+          <div class="font-mono text-xs text-white/85">cluster members + metrics</div>
+          <p class="text-white/65 mt-2">
+            cluster_id, signal_ids, dominant_topics, avg_sentiment, heat_score, top
+            20 summary one-liners.
+          </p>
+        </div>
+        <div>
+          <div class="text-xs text-white/40 uppercase tracking-wider mb-2">Output</div>
+          <div class="font-mono text-xs text-emerald-300">_ClusterLabel</div>
+          <ul class="text-white/65 mt-2 space-y-1">
+            <li>· label (≤120 chars, 3-7 words)</li>
+            <li>· representative_quote (verbatim from inputs)</li>
+            <li>· confidence (0-1)</li>
+          </ul>
+        </div>
+        <div>
+          <div class="text-xs text-white/40 uppercase tracking-wider mb-2">Strategy</div>
+          <p class="text-white/65">
+            Cheap descriptive task — gemma4:e2b at ~5s each. Numeric metrics
+            (heat, sentiment) are computed deterministically in Python first; the
+            LLM only contributes the human-readable label + quote.
+          </p>
+        </div>
+      </div>
+    </details>
+
+    <!-- 3. generate_idea -->
+    <details class="card p-6">
+      <summary class="flex items-baseline justify-between gap-4 flex-wrap">
+        <div class="flex items-baseline gap-3 flex-wrap">
+          <h4 class="text-xl font-semibold">generate_idea</h4>
+          <span class="pill pill-agent">heavy tier</span>
+          <span class="pill pill-output">followed by polish pass</span>
+        </div>
+        <span class="text-xs text-white/40 font-mono">synthesizers/ideas.py</span>
+      </summary>
+      <div class="mt-5 grid md:grid-cols-3 gap-5 text-sm">
+        <div>
+          <div class="text-xs text-white/40 uppercase tracking-wider mb-2">Input context</div>
+          <ul class="text-white/65 space-y-1">
+            <li>· cluster label + heat + topics</li>
+            <li>· up to 25 summary one-liners</li>
+            <li>· extracted voice guide (~4KB)</li>
+            <li>· last 8 2GT videos w/ tier tag</li>
+            <li>· "what's working" / "underperforms"</li>
+            <li>· peer channels + prior ideas (90d)</li>
+            <li>· risk-flag rules (AI, Proxmox)</li>
+          </ul>
+        </div>
+        <div>
+          <div class="text-xs text-white/40 uppercase tracking-wider mb-2">Output schema</div>
+          <div class="font-mono text-xs text-emerald-300">IdeaCandidate</div>
+          <ul class="text-white/65 mt-2 space-y-1">
+            <li>· angle (≤300 chars)</li>
+            <li>· why_now (≤400 chars)</li>
+            <li>· audience_fit</li>
+            <li>· format (short/quick_win/long_form/journey)</li>
+            <li>· suggested_titles (3-5)</li>
+            <li>· thumbnail_concepts (2-4)</li>
+            <li>· cross_post (IG/LI/Discord)</li>
+            <li>· risk_flags []</li>
+            <li>· fatigue_score (0-1)</li>
+            <li>· confidence (0-1)</li>
+            <li>· source_cluster_ids, source_signal_ids</li>
+          </ul>
+        </div>
+        <div>
+          <div class="text-xs text-white/40 uppercase tracking-wider mb-2">Selection upstream</div>
+          <p class="text-white/65">
+            Diversification gate selects up to N clusters with <em>topic diversity</em>:
+            round-robin across distinct primary topics with
+            <span class="font-mono text-xs">max_per_topic=2</span>. Without this you'd get 5 AI ideas
+            in a row whenever LocalLLaMA is on fire.
+          </p>
+          <p class="text-white/65 mt-3">
+            Prior-ideas list (90d window) is fed in to prevent re-pitching the same angle
+            without significant new news.
+          </p>
+        </div>
+      </div>
+    </details>
+
+    <!-- 4. generate_outline -->
+    <details class="card p-6">
+      <summary class="flex items-baseline justify-between gap-4 flex-wrap">
+        <div class="flex items-baseline gap-3 flex-wrap">
+          <h4 class="text-xl font-semibold">generate_outline</h4>
+          <span class="pill pill-agent">heavy tier</span>
+          <span class="pill pill-output">followed by polish pass</span>
+        </div>
+        <span class="text-xs text-white/40 font-mono">synthesizers/outlines.py</span>
+      </summary>
+      <div class="mt-5 grid md:grid-cols-3 gap-5 text-sm">
+        <div>
+          <div class="text-xs text-white/40 uppercase tracking-wider mb-2">Input context</div>
+          <ul class="text-white/65 space-y-1">
+            <li>· full IdeaCandidate</li>
+            <li>· voice_guide.md (cadence + lexicon)</li>
+            <li>· cluster representative quote</li>
+            <li>· every source-signal title + URL + body excerpt</li>
+            <li>· risk flags from the idea</li>
+          </ul>
+        </div>
+        <div>
+          <div class="text-xs text-white/40 uppercase tracking-wider mb-2">Output schema</div>
+          <div class="font-mono text-xs text-emerald-300">ScriptOutline</div>
+          <ul class="text-white/65 mt-2 space-y-1">
+            <li>· hook (≤600 chars, ~15s of read time)</li>
+            <li>· cold_open_seconds</li>
+            <li>· sections [3-12] of OutlineSection</li>
+            <li>· cta (≤240 chars)</li>
+            <li>· voice_notes (cadence reminders)</li>
+            <li>· sources [2-10] of ResearchSource</li>
+            <li>· open_questions []</li>
+            <li>· estimated_runtime_min</li>
+            <li>· confidence (0-1)</li>
+          </ul>
+        </div>
+        <div>
+          <div class="text-xs text-white/40 uppercase tracking-wider mb-2">Selection</div>
+          <p class="text-white/65">
+            Outlines are expensive (~30s + ~2s polish). The pipeline only generates them for
+            the top-3 highest-confidence ideas in a cycle. Open-questions field is
+            non-optional — the prompt explicitly asks the model to <em>self-report</em>
+            things it can't verify from the input signals, so Rich knows what to check.
+          </p>
+        </div>
+      </div>
+    </details>
+
+    <!-- 5. editor / polish -->
+    <details class="card p-6">
+      <summary class="flex items-baseline justify-between gap-4 flex-wrap">
+        <div class="flex items-baseline gap-3 flex-wrap">
+          <h4 class="text-xl font-semibold">editor (polish)</h4>
+          <span class="pill pill-agent">polish tier · unconstrained</span>
+        </div>
+        <span class="text-xs text-white/40 font-mono">synthesizers/editor.py</span>
+      </summary>
+      <div class="mt-5 grid md:grid-cols-3 gap-5 text-sm">
+        <div>
+          <div class="text-xs text-white/40 uppercase tracking-wider mb-2">Input</div>
+          <p class="text-white/65">
+            JSON snippet containing only the prose fields of the parent agent's
+            draft (e.g. angle / why_now / audience_fit for idea, hook / cta for outline).
+            Field list is explicit so the polish pass can't touch structured numeric fields.
+          </p>
+        </div>
+        <div>
+          <div class="text-xs text-white/40 uppercase tracking-wider mb-2">Strategy</div>
+          <ul class="text-white/65 space-y-1">
+            <li>· No <span class="font-mono text-xs">format=schema</span> constraint</li>
+            <li>· Lower temperature (0.2)</li>
+            <li>· Prompted as "editor cleaning up draft text"</li>
+            <li>· Falls back to original on JSON parse failure (never breaks pipeline)</li>
+            <li>· Heuristic artifact detector runs alongside for telemetry</li>
+          </ul>
+        </div>
+        <div>
+          <div class="text-xs text-white/40 uppercase tracking-wider mb-2">What it catches</div>
+          <ul class="text-white/65 space-y-1">
+            <li>· doubled words ("a a", "salvage salvage")</li>
+            <li>· weird hyphenation ("a-neutral")</li>
+            <li>· truncated mid-word</li>
+            <li>· leaked JSON syntax fragments</li>
+            <li>· stray control tokens</li>
+            <li>· common token-noise typos</li>
+          </ul>
+        </div>
+      </div>
+    </details>
+
+    <!-- 6. score_titles -->
+    <details class="card p-6">
+      <summary class="flex items-baseline justify-between gap-4 flex-wrap">
+        <div class="flex items-baseline gap-3 flex-wrap">
+          <h4 class="text-xl font-semibold">score_titles</h4>
+          <span class="pill pill-agent">vidiq → heuristic fallback</span>
+        </div>
+        <span class="text-xs text-white/40 font-mono">synthesizers/title_scorer.py</span>
+      </summary>
+      <div class="mt-5 grid md:grid-cols-3 gap-5 text-sm">
+        <div>
+          <div class="text-xs text-white/40 uppercase tracking-wider mb-2">Vidiq path</div>
+          <p class="text-white/65">
+            If <span class="font-mono text-xs">COMPOSIO_API_KEY</span> is set and vidiq is
+            connected, calls <span class="font-mono text-xs">VIDIQ_SCORE_TITLE</span> per
+            title. 5 credits/call. Real CTR scoring against YouTube's ranker history.
+          </p>
+        </div>
+        <div>
+          <div class="text-xs text-white/40 uppercase tracking-wider mb-2">Heuristic fallback</div>
+          <p class="text-white/65 mb-2">
+            Deterministic 0-100 score from regex levers, calibrated to 2GT's actual
+            breakouts:
+          </p>
+          <ul class="text-white/65 space-y-1">
+            <li>+ length sweet spot 35-65</li>
+            <li>+ numbers, year tags, parens</li>
+            <li>+ "vs" / comparison framing</li>
+            <li>+ contrarian verbs (stop, killed, broke, ditched)</li>
+            <li>+ first-person POV</li>
+            <li>− ALL CAPS, multiple !</li>
+            <li>− "ultimate guide" / "how to" / clickbait phrases</li>
+          </ul>
+        </div>
+        <div>
+          <div class="text-xs text-white/40 uppercase tracking-wider mb-2">Output</div>
+          <p class="text-white/65">
+            Each idea's <span class="font-mono text-xs">title_scores</span> gets populated
+            with [{title, score, source}] sorted desc. The report template highlights the
+            top 2 in emerald. Source tag is preserved so we can tell vidiq scores from
+            heuristic at a glance.
+          </p>
+        </div>
+      </div>
+    </details>
+
+    <!-- 7. verify_citations -->
+    <details class="card p-6">
+      <summary class="flex items-baseline justify-between gap-4 flex-wrap">
+        <div class="flex items-baseline gap-3 flex-wrap">
+          <h4 class="text-xl font-semibold">verify_citations</h4>
+          <span class="pill pill-agent">deterministic · no LLM</span>
+        </div>
+        <span class="text-xs text-white/40 font-mono">synthesizers/citation_verifier.py</span>
+      </summary>
+      <div class="mt-5 grid md:grid-cols-3 gap-5 text-sm">
+        <div>
+          <div class="text-xs text-white/40 uppercase tracking-wider mb-2">Why it exists</div>
+          <p class="text-white/65">
+            LLMs hallucinate plausible-looking URLs. In early runs the outline writer cited
+            <span class="font-mono text-xs">github.com/2GuysTek/&lt;made-up-repo&gt;</span>.
+            Untrustworthy citations corrode the value of the whole brief.
+          </p>
+        </div>
+        <div>
+          <div class="text-xs text-white/40 uppercase tracking-wider mb-2">Logic</div>
+          <ul class="text-white/65 space-y-1">
+            <li>1. Normalize URL (lowercase host, strip trailing slash)</li>
+            <li>2. Build allowlist = source_signal URLs ∪ small infra-docs whitelist (proxmox.com, github.com, kubernetes.io, …)</li>
+            <li>3. For each <span class="font-mono text-xs">ResearchSource</span>, set <span class="font-mono text-xs">verified = url ∈ allowlist</span></li>
+          </ul>
+        </div>
+        <div>
+          <div class="text-xs text-white/40 uppercase tracking-wider mb-2">Surface</div>
+          <p class="text-white/65">
+            Unverified sources render with amber border + "⚠ unverified" pill + "verify
+            before quoting" note in the report. Per-cycle hallucination rate is logged to
+            <span class="font-mono text-xs">agent_runs</span> for trend tracking
+            (currently averaging ~8-14%).
+          </p>
+        </div>
+      </div>
+    </details>
+
+  </div>
+</section>
+
+
+<!-- ─── THE HARNESS ──────────────────────────────────────────────────────── -->
+<section class="bg-black/30 border-y border-white/5">
+  <div class="max-w-5xl mx-auto px-8 py-16">
+    <div class="text-xs tracking-[0.3em] text-white/40 uppercase mb-3">The harness</div>
+    <h3 class="text-2xl md:text-3xl font-bold mb-3">How an agent call actually works</h3>
+    <p class="text-white/65 mb-8 max-w-3xl">
+      All five LLM-backed agents share a single entry point:
+      <span class="font-mono text-violet-300">run_agent()</span> in
+      <span class="font-mono text-violet-300">ollama_client.py</span>. The function is the
+      enforcement layer — it owns structured output, validation, escalation, retry, and
+      observability.
+    </p>
+
+    <div class="card p-6 mb-6">
+      <div class="text-xs text-white/40 uppercase tracking-wider mb-3">run_agent flow</div>
+      <ol class="space-y-2 text-sm text-white/80 leading-relaxed">
+        <li><span class="step-num inline-flex shrink-0 align-middle mr-2" style="width: 22px; height: 22px; font-size: 11px;">1</span><strong>Render prompt.</strong> Load versioned template from <span class="font-mono text-xs">prompts/</span> (no Jinja in prompts on purpose — grep-friendly). Substitute <span class="font-mono text-xs">{{var}}</span>.</li>
+        <li><span class="step-num inline-flex shrink-0 align-middle mr-2" style="width: 22px; height: 22px; font-size: 11px;">2</span><strong>Call Ollama with the schema.</strong> POST to <span class="font-mono text-xs">/api/chat</span> with <span class="font-mono text-xs">format = SchemaCls.model_json_schema()</span>. Ollama constrains decoding to produce valid JSON conforming to that schema.</li>
+        <li><span class="step-num inline-flex shrink-0 align-middle mr-2" style="width: 22px; height: 22px; font-size: 11px;">3</span><strong>Validate.</strong> Pydantic <span class="font-mono text-xs">.model_validate_json()</span>. Catch ValidationError + json.JSONDecodeError.</li>
+        <li><span class="step-num inline-flex shrink-0 align-middle mr-2" style="width: 22px; height: 22px; font-size: 11px;">4</span><strong>Check confidence.</strong> Extract <span class="font-mono text-xs">parsed.confidence</span>. If &lt; <span class="font-mono text-xs">confidence_retry_below</span> (0.55) <em>and</em> a stronger tier exists, escalate.</li>
+        <li><span class="step-num inline-flex shrink-0 align-middle mr-2" style="width: 22px; height: 22px; font-size: 11px;">5</span><strong>Log to agent_runs.</strong> input_hash, output JSON, confidence, elapsed_ms, escalated_from, error.</li>
+        <li><span class="step-num inline-flex shrink-0 align-middle mr-2" style="width: 22px; height: 22px; font-size: 11px;">6</span><strong>Return.</strong> <span class="font-mono text-xs">(parsed_or_None, AgentResult)</span> tuple. Caller decides whether to persist.</li>
+      </ol>
+    </div>
+
+    <div class="grid md:grid-cols-2 gap-5">
+      <div class="card p-5 text-sm text-white/70 leading-relaxed">
+        <div class="text-xs text-white/40 uppercase tracking-wider mb-2">Escalation order</div>
+        <div class="font-mono text-violet-300 mb-2">fast → mid → heavy</div>
+        <p>
+          Triggered by either schema-validation failure or low confidence. The harness
+          remembers <span class="font-mono text-xs">escalated_from</span> so we can see
+          downstream which tier originally tried and failed.
+        </p>
+      </div>
+      <div class="card p-5 text-sm text-white/70 leading-relaxed">
+        <div class="text-xs text-white/40 uppercase tracking-wider mb-2">Retry on transient errors</div>
+        <p>
+          <span class="font-mono text-violet-300">tenacity</span> decorator on the
+          underlying httpx call: 3 attempts, exponential backoff 1-8s, retries on
+          <span class="font-mono text-xs">httpx.HTTPError</span> and
+          <span class="font-mono text-xs">OllamaError</span> only (not on schema failures —
+          those go through escalation instead).
+        </p>
+      </div>
+      <div class="card p-5 text-sm text-white/70 leading-relaxed">
+        <div class="text-xs text-white/40 uppercase tracking-wider mb-2">HTTP timeout</div>
+        <p>
+          900 s per call. Q8 unconstrained generation on dense models can take 5-9 min for
+          a long outline; this is generous so we never lose work on a slow inference.
+        </p>
+      </div>
+      <div class="card p-5 text-sm text-white/70 leading-relaxed">
+        <div class="text-xs text-white/40 uppercase tracking-wider mb-2">Env normalization</div>
+        <p>
+          <span class="font-mono text-violet-300">OLLAMA_HOST</span> is normalized at
+          startup — bare <span class="font-mono text-xs">host:port</span> gets
+          <span class="font-mono text-xs">http://</span> prepended, bind addresses
+          (<span class="font-mono text-xs">0.0.0.0</span>, <span class="font-mono text-xs">::</span>) get rewritten to localhost.
+          Caught a real bug where Ollama's daemon plist set bare host:port for LAN binding.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ─── CLUSTERING MATH ────────────────────────────────────────────────────── -->
+<section class="max-w-5xl mx-auto px-8 py-16">
+  <div class="text-xs tracking-[0.3em] text-white/40 uppercase mb-3">The clustering</div>
+  <h3 class="text-2xl md:text-3xl font-bold mb-3">From 377 summaries to a handful of trends</h3>
+  <p class="text-white/65 mb-8 max-w-3xl">
+    Clustering happens entirely in Python — no LLM is involved in the math. The LLM only
+    names the resulting clusters.
+  </p>
+
+  <div class="grid md:grid-cols-2 gap-5">
+    <div class="card p-6">
+      <div class="text-xs text-white/40 uppercase tracking-wider mb-3">Steps</div>
+      <ol class="space-y-3 text-sm text-white/75 leading-relaxed">
+        <li>
+          <strong>1. Embed.</strong>
+          <span class="font-mono text-xs">nomic-embed-text</span> via Ollama
+          <span class="font-mono text-xs">/api/embed</span>. Input is
+          <span class="font-mono text-xs">"{one_line} :: {' / '.join(key_points)}"</span>.
+        </li>
+        <li><strong>2. L2-normalize</strong> each vector for cosine distance.</li>
+        <li>
+          <strong>3. Agglomerative cluster</strong> (<span class="font-mono text-xs">sklearn</span>):
+          <span class="font-mono text-xs">metric=cosine</span>,
+          <span class="font-mono text-xs">linkage=average</span>,
+          <span class="font-mono text-xs">distance_threshold=0.30</span>.
+        </li>
+        <li>
+          <strong>4. Per cluster:</strong> top-3 dominant topics from member topic counts;
+          mean sentiment in [-1, 1]; mean novelty.
+        </li>
+        <li><strong>5. Heat score</strong> from formula opposite.</li>
+        <li>
+          <strong>6. Label</strong> via the <span class="font-mono text-xs">cluster_label</span> agent
+          (fast tier) and persist to the <span class="font-mono text-xs">clusters</span> table.
+        </li>
+      </ol>
+    </div>
+
+    <div class="card p-6">
+      <div class="text-xs text-white/40 uppercase tracking-wider mb-3">Heat score formula</div>
+      <div class="card-warm p-4 mb-4 font-mono text-sm text-white/85 leading-loose">
+        recency&nbsp;=&nbsp;1&nbsp;/&nbsp;(1&nbsp;+&nbsp;avg_age_hours / 48)<br/>
+        heat&nbsp;=&nbsp;n_signals × (0.4 + 0.6 × avg_novelty) × recency
+      </div>
+      <p class="text-sm text-white/70 leading-relaxed">
+        Volume is the dominant factor (linear scaling). Novelty has a floor (0.4) so even a
+        cluster about an old topic gets some weight if it's spiking in volume — but a
+        novel topic gets nearly 2× the multiplier of a stale one. Recency decays with a ~2-day
+        half-life so a Reddit thread from 6 days ago competes fairly against one from this morning.
+      </p>
+      <div class="mt-4 text-xs text-white/50">
+        Topic-diversification gate is applied <em>after</em> heat ranking — see
+        <span class="font-mono text-violet-300">_select_diverse_clusters()</span> in
+        <span class="font-mono">synthesizers/ideas.py</span>.
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ─── DATA LAYER ─────────────────────────────────────────────────────────── -->
+<section class="bg-black/30 border-y border-white/5">
+  <div class="max-w-5xl mx-auto px-8 py-16">
+    <div class="text-xs tracking-[0.3em] text-white/40 uppercase mb-3">Data layer</div>
+    <h3 class="text-2xl md:text-3xl font-bold mb-3">8 tables, SQLite + WAL</h3>
+    <p class="text-white/65 mb-8 max-w-3xl">
+      One file at <span class="font-mono text-xs text-violet-300">data/engine.db</span>.
+      Schema lives in <span class="font-mono text-xs text-violet-300">db.py</span> — grep-friendly,
+      easy to evolve. WAL mode so the GUI process can read while the pipeline writes.
+    </p>
+
+    <div class="card overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-white/5 text-white/50 text-xs uppercase tracking-wider">
+          <tr>
+            <th class="text-left px-4 py-3 font-medium">Table</th>
+            <th class="text-left px-4 py-3 font-medium">Holds</th>
+            <th class="text-left px-4 py-3 font-medium">Written by</th>
+            <th class="text-left px-4 py-3 font-medium">Notable indexes / constraints</th>
+          </tr>
+        </thead>
+        <tbody class="text-xs">
+          <tr class="border-t border-white/5">
+            <td class="px-4 py-3 font-mono text-violet-300">signals</td>
+            <td class="px-4 py-3 text-white/80">raw collected items</td>
+            <td class="px-4 py-3 text-white/65">collectors/*</td>
+            <td class="px-4 py-3 text-white/65 font-mono">UNIQUE(platform, external_id)</td>
+          </tr>
+          <tr class="border-t border-white/5">
+            <td class="px-4 py-3 font-mono text-violet-300">summaries</td>
+            <td class="px-4 py-3 text-white/80">structured per-signal output</td>
+            <td class="px-4 py-3 text-white/65">processors/summarize</td>
+            <td class="px-4 py-3 text-white/65 font-mono">PK signal_id → signals(id)</td>
+          </tr>
+          <tr class="border-t border-white/5">
+            <td class="px-4 py-3 font-mono text-violet-300">clusters</td>
+            <td class="px-4 py-3 text-white/80">named trend groups per cycle</td>
+            <td class="px-4 py-3 text-white/65">processors/cluster</td>
+            <td class="px-4 py-3 text-white/65 font-mono">idx(cycle_id)</td>
+          </tr>
+          <tr class="border-t border-white/5">
+            <td class="px-4 py-3 font-mono text-violet-300">ideas</td>
+            <td class="px-4 py-3 text-white/80">IdeaCandidate JSON + fate</td>
+            <td class="px-4 py-3 text-white/65">synthesizers/ideas, web/app</td>
+            <td class="px-4 py-3 text-white/65 font-mono">PK idea_id; idx(cycle_id, fate)</td>
+          </tr>
+          <tr class="border-t border-white/5">
+            <td class="px-4 py-3 font-mono text-violet-300">outlines</td>
+            <td class="px-4 py-3 text-white/80">ScriptOutline JSON</td>
+            <td class="px-4 py-3 text-white/65">synthesizers/outlines, citation_verifier</td>
+            <td class="px-4 py-3 text-white/65 font-mono">PK idea_id → ideas(idea_id)</td>
+          </tr>
+          <tr class="border-t border-white/5">
+            <td class="px-4 py-3 font-mono text-violet-300">video_performance</td>
+            <td class="px-4 py-3 text-white/80">YT analytics per produced video</td>
+            <td class="px-4 py-3 text-white/65">web/app, future cron</td>
+            <td class="px-4 py-3 text-white/65 font-mono">PK video_id; FK idea_id</td>
+          </tr>
+          <tr class="border-t border-white/5">
+            <td class="px-4 py-3 font-mono text-violet-300">agent_runs</td>
+            <td class="px-4 py-3 text-white/80">every LLM call (telemetry)</td>
+            <td class="px-4 py-3 text-white/65">ollama_client.run_agent</td>
+            <td class="px-4 py-3 text-white/65 font-mono">idx(agent, created_at)</td>
+          </tr>
+          <tr class="border-t border-white/5">
+            <td class="px-4 py-3 font-mono text-violet-300">cycles</td>
+            <td class="px-4 py-3 text-white/80">pipeline run metadata</td>
+            <td class="px-4 py-3 text-white/65">pipeline, web/app</td>
+            <td class="px-4 py-3 text-white/65 font-mono">PK id (timestamp-based)</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="mt-8 grid md:grid-cols-2 gap-5 text-sm text-white/70 leading-relaxed">
+      <div class="card p-5">
+        <div class="text-xs text-white/40 uppercase tracking-wider mb-2">Why SQLite, not Postgres</div>
+        Single-user local app. SQLite + WAL gives concurrent read/write with zero setup,
+        zero daemon, zero cloud bill. The whole DB is portable as one file. If the engine
+        ever moves to a real server, the schema in <span class="font-mono text-xs">db.py</span>
+        is straightforward Postgres-compatible SQL.
+      </div>
+      <div class="card p-5">
+        <div class="text-xs text-white/40 uppercase tracking-wider mb-2">Why also LanceDB</div>
+        Reserved for vector dedupe of past ideas (planned). Idea embeddings will be persisted
+        so the synthesizer can do a similarity search before pitching anything — if a candidate
+        is within ε of a 90-day-old idea, surface "you've already pitched this" unless
+        there's a significant new event tied to it.
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ─── ORCHESTRATOR + OBSERVABILITY ─────────────────────────────────────── -->
+<section class="max-w-5xl mx-auto px-8 py-16">
+  <div class="text-xs tracking-[0.3em] text-white/40 uppercase mb-3">Orchestrator + observability</div>
+  <h3 class="text-2xl md:text-3xl font-bold mb-3">The weekly DAG</h3>
+  <p class="text-white/65 mb-8 max-w-3xl">
+    A single function in <span class="font-mono text-xs text-violet-300">pipeline.py</span>
+    chains every step. No DAG framework, no message bus — for a single-user local app the
+    overhead of Airflow / Prefect / Dagster isn't worth it.
+  </p>
+
+  <div class="card p-6 font-mono text-xs leading-relaxed overflow-x-auto">
+<pre class="text-white/75">
+new_cycle(notes=…)
+  │
+  ▼
+summarize_pending(limit=200)         ─── per-signal LLM, mid tier
+  │
+  ▼
+cluster_recent(days=7, threshold=0.30) ─── embed + sklearn + per-cluster label
+  │
+  ▼
+generate_for_clusters(top_n=6, max_per_topic=2)
+  │  └─→ generate_idea (heavy) → polish (polish) → IdeaCandidate
+  ▼
+score_cycle_ideas()                  ─── vidiq + heuristic title scoring
+  │
+  ▼
+generate_for_ideas(only_top_n=3)
+  │  └─→ generate_outline (heavy) → polish (polish) → ScriptOutline
+  ▼
+verify_cycle()                       ─── citation verifier (deterministic)
+  │
+  ▼
+render_weekly() → reports/weekly_&lt;id&gt;.html
+  │
+  ▼
+finish_cycle(status='ok')
+</pre>
+  </div>
+
+  <div class="mt-8 grid md:grid-cols-3 gap-5">
+    <div class="card p-5 text-sm">
+      <div class="text-xs text-white/40 uppercase tracking-wider mb-2">Scheduling</div>
+      <p class="text-white/70">
+        macOS LaunchAgent at <span class="font-mono text-xs">~/Library/LaunchAgents/com.2gt.contentengine.weekly.plist</span>.
+        Sunday 3am. A second LaunchAgent keeps the FastAPI GUI process running with
+        crash-restart (<span class="font-mono text-xs">KeepAlive</span> + 10s throttle).
+      </p>
+    </div>
+    <div class="card p-5 text-sm">
+      <div class="text-xs text-white/40 uppercase tracking-wider mb-2">Ad-hoc runs</div>
+      <p class="text-white/70">
+        <span class="font-mono text-xs">POST /run</span> from the GUI forks a detached
+        subprocess via <span class="font-mono text-xs">subprocess.Popen(start_new_session=True)</span>.
+        Lock file at <span class="font-mono text-xs">data/runs/.manual_run.lock</span> tracks the
+        PID. Zombie detection in <span class="font-mono text-xs">_process_alive()</span> via
+        <span class="font-mono text-xs">ps -p &lt;pid&gt; -o state=</span>.
+      </p>
+    </div>
+    <div class="card p-5 text-sm">
+      <div class="text-xs text-white/40 uppercase tracking-wider mb-2">Eval</div>
+      <p class="text-white/70">
+        <span class="font-mono text-xs">engine eval</span> runs every JSON case in
+        <span class="font-mono text-xs">tests/golden/&lt;agent&gt;/</span> against the registered agent
+        and checks the output against expectations (min_confidence, must_include_topics,
+        sentiment_in, keyword presence). Catches model-swap regressions.
+      </p>
+    </div>
+  </div>
+
+  <div class="mt-6 card p-6">
+    <div class="text-xs text-white/40 uppercase tracking-wider mb-3">Observability via agent_runs</div>
+    <p class="text-sm text-white/70 leading-relaxed mb-3">
+      Every single LLM call writes a row to <span class="font-mono text-xs">agent_runs</span>.
+      The report template reads from it to render the per-cycle "agent telemetry" table.
+      Queries you can run by hand for forensics:
+    </p>
+    <div class="card-warm p-4 font-mono text-xs text-white/85 leading-loose overflow-x-auto">
+<pre>
+-- Which agent is slowest on the last cycle?
+SELECT agent, model_tier, AVG(elapsed_ms) ms, COUNT(*) n
+FROM agent_runs WHERE cycle_id = (SELECT id FROM cycles ORDER BY started_at DESC LIMIT 1)
+GROUP BY agent, model_tier ORDER BY ms DESC;
+
+-- Where are escalations happening?
+SELECT agent, escalated_from, model_tier, COUNT(*) n
+FROM agent_runs WHERE escalated_from IS NOT NULL GROUP BY 1,2,3;
+
+-- Hallucination rate trend over the last 8 cycles
+SELECT cycle_id, json_extract(output_json,'$.hallucination_rate') rate
+FROM agent_runs WHERE agent='verify_citations' ORDER BY id DESC LIMIT 8;
+</pre>
+    </div>
+  </div>
+</section>
+
+
+<!-- ─── COLLECTION SOURCES — TECHNICAL ───────────────────────────────────── -->
+<section class="bg-black/30 border-y border-white/5">
+  <div class="max-w-5xl mx-auto px-8 py-16">
+    <div class="text-xs tracking-[0.3em] text-white/40 uppercase mb-3">Collection sources — wire-level</div>
+    <h3 class="text-2xl md:text-3xl font-bold mb-3">Five collectors, five wire protocols</h3>
+
+    <div class="card overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-white/5 text-white/50 text-xs uppercase tracking-wider">
+          <tr>
+            <th class="text-left px-4 py-3 font-medium">Source</th>
+            <th class="text-left px-4 py-3 font-medium">Protocol</th>
+            <th class="text-left px-4 py-3 font-medium">Auth</th>
+            <th class="text-left px-4 py-3 font-medium">Rate considerations</th>
+          </tr>
+        </thead>
+        <tbody class="text-xs">
+          <tr class="border-t border-white/5">
+            <td class="px-4 py-3 font-mono text-violet-300">reddit</td>
+            <td class="px-4 py-3 text-white/80">public JSON (<span class="font-mono">reddit.com/r/X/top.json</span>)</td>
+            <td class="px-4 py-3 text-white/65">none</td>
+            <td class="px-4 py-3 text-white/65">~1 req/sec inter-sleep</td>
+          </tr>
+          <tr class="border-t border-white/5">
+            <td class="px-4 py-3 font-mono text-violet-300">youtube</td>
+            <td class="px-4 py-3 text-white/80">Composio SDK → YOUTUBE_LIST_CHANNEL_VIDEOS</td>
+            <td class="px-4 py-3 text-white/65">Google OAuth via Composio</td>
+            <td class="px-4 py-3 text-white/65">YouTube API quota</td>
+          </tr>
+          <tr class="border-t border-white/5">
+            <td class="px-4 py-3 font-mono text-violet-300">blog</td>
+            <td class="px-4 py-3 text-white/80">feedparser over RSS/Atom (per <span class="font-mono">data/feeds.yaml</span>)</td>
+            <td class="px-4 py-3 text-white/65">none</td>
+            <td class="px-4 py-3 text-white/65">0.4s per feed, tolerant of parse failures</td>
+          </tr>
+          <tr class="border-t border-white/5">
+            <td class="px-4 py-3 font-mono text-violet-300">hackernews</td>
+            <td class="px-4 py-3 text-white/80">Algolia HN <span class="font-mono">/search_by_date</span></td>
+            <td class="px-4 py-3 text-white/65">none</td>
+            <td class="px-4 py-3 text-white/65">17 keyword queries, ~0.3s spacing, in-memory dedupe</td>
+          </tr>
+          <tr class="border-t border-white/5">
+            <td class="px-4 py-3 font-mono text-violet-300">github</td>
+            <td class="px-4 py-3 text-white/80">REST <span class="font-mono">/repos/&lt;owner&gt;/&lt;repo&gt;/releases</span></td>
+            <td class="px-4 py-3 text-white/65">unauth (60/hr/IP)</td>
+            <td class="px-4 py-3 text-white/65">~0.5s per repo; skips drafts/pre-releases</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="mt-6 card p-5 text-sm text-white/70 leading-relaxed">
+      <div class="text-xs text-white/40 uppercase tracking-wider mb-2">Composio wrapper trick</div>
+      <p>
+        <span class="font-mono text-xs">collectors/composio_client.py</span> indexes connected
+        accounts by toolkit name on initialization. When
+        <span class="font-mono text-xs">execute(slug, ...)</span> is called, it derives the toolkit
+        from the slug prefix (e.g. <span class="font-mono text-xs">YOUTUBE_LIST_CHANNEL_VIDEOS → youtube</span>)
+        and auto-attaches the right <span class="font-mono text-xs">connected_account</span>.
+        Composio v3's SDK doesn't do this auto-resolution, and calls fail with
+        <span class="font-mono text-xs">InvalidParams: connected_account cannot be None</span>
+        without it. A Noop fallback class is returned when
+        <span class="font-mono text-xs">COMPOSIO_API_KEY</span> is unset so the engine still
+        runs end-to-end (just without OAuth'd sources).
+      </p>
+    </div>
+  </div>
+</section>
+
+
+<!-- ─── ECONOMICS DEEP DIVE ───────────────────────────────────────────────── -->
+<section class="max-w-5xl mx-auto px-8 py-16">
+  <div class="text-xs tracking-[0.3em] text-white/40 uppercase mb-3">Cost model</div>
+  <h3 class="text-2xl md:text-3xl font-bold mb-3">Why this costs $0 per run</h3>
+
+  <div class="grid md:grid-cols-2 gap-5">
+    <div class="card p-6 text-sm text-white/75 leading-relaxed">
+      <p class="mb-3">
+        A typical weekly cycle makes ~120 LLM calls. At GPT-4o pricing, that's roughly
+        $0.50-$1.50 per cycle depending on context size — $25-75/year for the engine to
+        run on its own.
+      </p>
+      <p>
+        Running locally on the M5 Max, the same 120 calls cost zero dollars (the hardware
+        was bought regardless, electricity for the ~10 min of inference is rounding error).
+        Over the project's lifetime that's a meaningful number — and more importantly,
+        every editorial decision the engine makes stays on this Mac.
+      </p>
+    </div>
+
+    <div class="card p-6">
+      <div class="text-xs text-white/40 uppercase tracking-wider mb-3">Per-cycle call budget</div>
+      <table class="w-full text-sm">
+        <tbody class="font-mono text-xs">
+          <tr><td class="py-1.5 text-white/65">embeddings</td><td class="py-1.5 text-right text-white/85">~1 batch (377 vectors)</td></tr>
+          <tr><td class="py-1.5 text-white/65">summarize_signal</td><td class="py-1.5 text-right text-white/85">~20-40 (new only)</td></tr>
+          <tr><td class="py-1.5 text-white/65">cluster_label</td><td class="py-1.5 text-right text-white/85">~50-80</td></tr>
+          <tr><td class="py-1.5 text-white/65">generate_idea</td><td class="py-1.5 text-right text-white/85">5-6</td></tr>
+          <tr><td class="py-1.5 text-white/65">generate_idea.polish</td><td class="py-1.5 text-right text-white/85">5-6</td></tr>
+          <tr><td class="py-1.5 text-white/65">generate_outline</td><td class="py-1.5 text-right text-white/85">3</td></tr>
+          <tr><td class="py-1.5 text-white/65">generate_outline.polish</td><td class="py-1.5 text-right text-white/85">3</td></tr>
+          <tr class="border-t border-white/10"><td class="pt-3 text-white/85">total LLM</td><td class="pt-3 text-right text-emerald-300 font-semibold">~95-140</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+
+<!-- ─── FOOTER ─────────────────────────────────────────────────────────────── -->
+<footer class="border-t border-white/5 bg-black/30">
+  <div class="max-w-5xl mx-auto px-8 py-12 text-center text-sm text-white/40">
+    <div class="text-xs tracking-[0.3em] uppercase mb-3">2GuysTek</div>
+    <div>Built privately on local hardware. No subscriptions, no cloud bills, no data leaving the building.</div>
+    <div class="mt-2 font-mono text-xs">Live snapshot — May 2026</div>
+  </div>
+</footer>
+
+<script>
+  // Open every <details> on load so PDF + screen reader access show
+  // the full agent breakdowns without needing manual clicks.
+  document.querySelectorAll('details').forEach(d => d.open = true);
+</script>
+</body>
+</html>

@@ -1,0 +1,123 @@
+{% extends "layout.html" %}
+{% block title %}Triage · {{ brand }} Engine{% endblock %}
+{% block content %}
+
+{% set p = idea.payload %}
+
+<header class="mb-6 flex items-center justify-between">
+  <div>
+    <div class="text-xs tracking-[0.3em] text-white/40 uppercase">Triage</div>
+    <h1 class="text-2xl font-semibold mt-1">Idea {{ idx + 1 }} of {{ total }}</h1>
+  </div>
+  <a href="/cycle/{{ cycle_id }}" class="text-sm link">Back to cycle</a>
+</header>
+
+<div class="flex items-center gap-2 mb-6">
+  <div class="meter flex-1"><div style="width: {{ ((idx + 1) / total * 100)|int }}%"></div></div>
+  <div class="text-xs text-white/40 font-mono">{{ idx + 1 }}/{{ total }}</div>
+</div>
+
+<article class="card rounded-2xl p-7 glow mb-6">
+  <div class="flex items-center gap-2 mb-3 flex-wrap">
+    <span class="pill pill-format">{{ p.format }}</span>
+    {% for r in p.risk_flags %}<span class="pill pill-risk">⚠ {{ r }}</span>{% endfor %}
+    <span class="pill pill-fate-{{ idea.fate }}">{{ idea.fate }}</span>
+    <span class="text-xs text-white/30 font-mono ml-auto">{{ idea.idea_id }}</span>
+  </div>
+
+  <h2 class="text-2xl font-semibold leading-snug">{{ p.angle }}</h2>
+
+  <div class="mt-4 grid md:grid-cols-2 gap-4 text-sm">
+    <div>
+      <div class="text-[10px] text-white/40 uppercase tracking-wider mb-1">Why now</div>
+      <p class="text-white/80 leading-relaxed">{{ p.why_now }}</p>
+    </div>
+    <div>
+      <div class="text-[10px] text-white/40 uppercase tracking-wider mb-1">Audience fit</div>
+      <p class="text-white/70">{{ p.audience_fit }}</p>
+    </div>
+  </div>
+
+  <div class="mt-5">
+    <div class="text-[10px] text-white/40 uppercase tracking-wider mb-2">Suggested titles {% if p.title_scores %}<span class="text-white/30">· ranked</span>{% endif %}</div>
+    <ul class="space-y-1.5 text-sm">
+      {% if p.title_scores %}
+        {% for ts in p.title_scores %}
+        <li class="flex items-baseline gap-2">
+          <span class="font-mono tabular-nums text-xs shrink-0 w-9 text-right {% if loop.index <= 2 %}text-emerald-300{% else %}text-white/40{% endif %}">{{ '%.0f'|format(ts.score) }}</span>
+          <span class="{% if loop.index <= 2 %}text-white/95{% else %}text-white/55{% endif %}">{{ ts.title }}</span>
+        </li>
+        {% endfor %}
+      {% else %}
+        {% for t in p.suggested_titles %}<li class="text-white/85">· {{ t }}</li>{% endfor %}
+      {% endif %}
+    </ul>
+  </div>
+
+  {% if p.thumbnail_concepts %}
+  <details class="mt-5">
+    <summary class="text-xs text-white/50 hover:text-white/80 uppercase tracking-wider">Thumbnail concepts ▾</summary>
+    <ul class="mt-2 space-y-1 text-sm text-white/70">
+      {% for tc in p.thumbnail_concepts %}<li>· {{ tc }}</li>{% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+
+  {% if idea.outline %}
+  <details class="mt-5">
+    <summary class="text-xs text-white/50 hover:text-white/80 uppercase tracking-wider">
+      Outline · {{ idea.outline.estimated_runtime_min }} min · {{ idea.outline.sections|length }} sections ▾
+    </summary>
+    <div class="mt-3 card rounded-lg p-3 text-sm italic text-white/75">"{{ idea.outline.hook }}"</div>
+    <ol class="mt-3 space-y-1.5 text-sm">
+      {% for s in idea.outline.sections %}
+      <li class="text-white/75">{{ loop.index }}. <strong>{{ s.title }}</strong> <span class="text-white/40 tabular-nums">({{ s.duration_sec }}s)</span></li>
+      {% endfor %}
+    </ol>
+  </details>
+  {% endif %}
+
+  {% if idea.source_signals %}
+  <details class="mt-5">
+    <summary class="text-xs text-white/50 hover:text-white/80 uppercase tracking-wider">Source signals ▾</summary>
+    <ul class="mt-3 space-y-1.5 text-sm">
+      {% for s in idea.source_signals %}
+      <li><span class="pill pill-platform">{{ s.platform }}</span>
+          <a href="{{ s.url }}" target="_blank" class="link ml-2">{{ s.title }}</a>
+          {% if s.one_line %}<div class="text-xs text-white/50 ml-1 mt-1">{{ s.one_line }}</div>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+</article>
+
+<div class="card rounded-2xl p-5">
+  <div class="text-xs text-white/40 uppercase tracking-wider mb-3">Mark fate</div>
+  <form method="post" action="/idea/{{ idea.idea_id }}/fate" class="flex flex-wrap gap-3 items-center">
+    <button name="fate" value="produced" class="btn btn-produced">✓ Producing</button>
+    <button name="fate" value="parked"   class="btn btn-park">🅿 Park</button>
+    <button name="fate" value="rejected" class="btn btn-reject">✗ Reject</button>
+    <input name="reason" placeholder="Optional reason..." class="ml-2 flex-1 bg-white/5 rounded-md px-3 py-2 text-sm border border-white/10 focus:border-white/30 focus:outline-none" />
+  </form>
+
+  {% if idea.fate == 'produced' or idea.produced_video_id %}
+  <form method="post" action="/idea/{{ idea.idea_id }}/video" class="mt-4 flex gap-2 items-center">
+    <span class="text-xs text-white/50 uppercase tracking-wider">Video ID:</span>
+    <input name="video_id" value="{{ idea.produced_video_id or '' }}" placeholder="dQw4w9WgXcQ"
+           class="flex-1 bg-white/5 rounded-md px-3 py-2 text-sm font-mono border border-white/10 focus:border-white/30 focus:outline-none" />
+    <button class="btn btn-secondary">Attach</button>
+  </form>
+  {% endif %}
+</div>
+
+<div class="mt-6 flex justify-between text-sm">
+  {% if idx > 0 %}
+  <a href="/swipe/{{ cycle_id }}?idx={{ idx - 1 }}" class="link">← prev</a>
+  {% else %}<span></span>{% endif %}
+  {% if idx + 1 < total %}
+  <a href="/swipe/{{ cycle_id }}?idx={{ idx + 1 }}" class="link">skip →</a>
+  {% else %}<a href="/cycle/{{ cycle_id }}" class="link">finish →</a>{% endif %}
+</div>
+
+{% endblock %}

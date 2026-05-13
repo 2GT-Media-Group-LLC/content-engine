@@ -1,0 +1,61 @@
+# Source registry for the blog/feed collector. Add or remove entries here —
+# no code changes needed. The collector calls `feedparser.parse(url)` and
+# tolerates individual feed failures (one bad URL doesn't kill the cycle).
+#
+# Each entry:
+#   name:  short label that becomes the signal `author` field
+#   url:   feed URL (RSS or Atom — feedparser handles both)
+#   tier:  metadata only — useful when tuning what to keep
+#   tags:  optional list of topic hints the synthesizer can use
+
+# ─── Tier 1: vendor blogs + release feeds (high authority) ────────────────────
+# Proxmox has no public corporate news RSS — only the whole-forum firehose,
+# which is dominated by support questions. We get strong Proxmox signal from
+# r/Proxmox and Lawrence Systems already. Skipping.
+# TrueNAS likewise — no public blog RSS; covered by r/selfhosted + r/DataHoarder.
+
+- name: XCP-ng Blog
+  url: https://xcp-ng.org/blog/feed/
+  tier: 1
+  tags: [xcp-ng, virtualization]
+
+- name: Vates (XCP-ng / Xen Orchestra)
+  url: https://vates.tech/blog/rss
+  tier: 1
+  tags: [xcp-ng, virtualization, vates]
+
+- name: Veeam Blog
+  url: https://www.veeam.com/blog/rss
+  tier: 1
+  tags: [veeam, backup, virtualization]
+
+- name: Tailscale Blog
+  url: https://tailscale.com/blog/index.xml
+  tier: 1
+  tags: [tailscale, networking, vpn]
+
+- name: Ubiquiti Blog
+  url: https://blog.ui.com/feed/
+  tier: 1
+  tags: [unifi, networking]
+
+- name: Ubuntu Blog
+  url: https://ubuntu.com/blog/feed
+  tier: 1
+  tags: [ubuntu, canonical, microcloud]
+
+# ─── Tier 3: tech press (lower density, broad coverage) ───────────────────────
+- name: Phoronix
+  url: https://www.phoronix.com/rss.php
+  tier: 3
+  tags: [linux, kernel, performance]
+
+- name: The Register (Virtualization)
+  url: https://www.theregister.com/headlines.atom
+  tier: 3
+  tags: [tech-press, enterprise-it]
+
+- name: Ars Technica IT
+  url: https://feeds.arstechnica.com/arstechnica/technology-lab
+  tier: 3
+  tags: [tech-press, enterprise-it]

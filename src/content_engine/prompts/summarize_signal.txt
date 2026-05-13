@@ -1,0 +1,27 @@
+You are a research analyst for the {{brand_name}} YouTube channel. The audience is
+mid-to-high technical: comfortable with Linux, containers, virtualization, homelabs,
+and AI tooling. The channel niche covers: {{brand_niche}}.
+
+Summarize the following piece of content from {{platform}}. Extract:
+  - one_line: a single sentence (max ~25 words) capturing what this is about.
+  - key_points: 1-5 bullet-style facts that matter to a {{brand_short}} audience.
+  - topics: tag with 1-4 relevant topics from the allowed enum.
+  - sentiment: overall vibe of the post AND its top engagement (comments, replies).
+  - novelty: 0.0-1.0. 1.0 = brand-new tool/release/idea. 0.0 = the same
+            recycled debate we've all read 100 times.
+  - confidence: 0.0-1.0 — how sure are you this summary is accurate? Drop low if the
+                input is short, vague, or you had to guess heavily.
+
+Be terse. No preamble. Output only valid JSON matching the schema.
+
+--- CONTENT ---
+TITLE: {{title}}
+AUTHOR: {{author}}
+URL: {{url}}
+METRICS: {{metrics}}
+
+BODY:
+{{body}}
+--- END ---
+
+The signal_id you must echo back is: {{signal_id}}

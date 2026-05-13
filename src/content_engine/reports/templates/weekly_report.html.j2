@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>{{ brand }} — Weekly Content Brief — {{ generated_at }}</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = { theme: { extend: { fontFamily: {
+    sans: ['Inter', 'ui-sans-serif', 'system-ui'],
+    mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
+  } } } }
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  body { background:
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(120,119,198,0.18), transparent),
+    #0a0a0f;
+    color: #e7e7ee;
+  }
+  .card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); }
+  .card:hover { border-color: rgba(168,162,247,0.35); }
+  .pill { display: inline-block; padding: 2px 10px; border-radius: 999px;
+          font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; }
+  .pill-topic { background: rgba(120,119,198,0.18); color: #c8c5ff; }
+  .pill-risk { background: rgba(255,120,120,0.15); color: #ffb3b3; }
+  .pill-format { background: rgba(120,255,180,0.12); color: #a8f0c8; }
+  .pill-platform { background: rgba(255,200,120,0.12); color: #f0d8a8; }
+  .glow { box-shadow: 0 0 0 1px rgba(168,162,247,0.25),
+                      0 0 30px rgba(120,119,198,0.15); }
+  .heat-bar { background: linear-gradient(90deg, #6b7cff, #d96bff); }
+  .meter { height: 6px; background: rgba(255,255,255,0.06); border-radius: 99px; overflow: hidden; }
+  .meter > div { height: 100%; background: linear-gradient(90deg,#6b7cff,#d96bff); }
+  details > summary { cursor: pointer; list-style: none; }
+  details > summary::-webkit-details-marker { display: none; }
+  .grid-bg {
+    background-image:
+      linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+</style>
+</head>
+<body class="font-sans antialiased">
+
+<div class="grid-bg">
+  <header class="max-w-6xl mx-auto px-8 pt-14 pb-10">
+    <div class="flex items-center justify-between gap-6">
+      <div>
+        <div class="text-xs tracking-[0.3em] text-white/40 uppercase">{{ brand }} Content Engine</div>
+        <h1 class="text-4xl font-semibold mt-2 leading-tight">Weekly Brief</h1>
+        <div class="text-white/50 text-sm mt-1 font-mono">cycle <span class="text-white/80">{{ cycle_id }}</span> · generated {{ generated_at }}</div>
+      </div>
+      <div class="text-right">
+        <div class="text-3xl font-semibold tabular-nums">{{ signal_count }}</div>
+        <div class="text-xs text-white/40 uppercase tracking-wider">signals analyzed</div>
+      </div>
+    </div>
+
+    <div class="mt-6 flex flex-wrap gap-2">
+      {% for p in platform_breakdown %}
+      <span class="pill pill-platform">{{ p.platform }} · {{ p.n }}</span>
+      {% endfor %}
+    </div>
+  </header>
+</div>
+
+<main class="max-w-6xl mx-auto px-8 pb-24">
+
+  <!-- IDEAS -->
+  <section class="mb-16">
+    <div class="flex items-baseline justify-between mb-6">
+      <h2 class="text-2xl font-semibold">Ideas, ranked</h2>
+      <div class="text-xs text-white/40 uppercase tracking-wider">{{ ideas|length }} candidate{{ 's' if ideas|length != 1 else '' }}</div>
+    </div>
+
+    {% if not ideas %}
+      <div class="card rounded-2xl p-8 text-white/50">No ideas generated this cycle.</div>
+    {% endif %}
+
+    <div class="space-y-6">
+    {% for item in ideas %}
+      {% set p = item.p %}
+      <article class="card rounded-2xl p-7 glow">
+        <div class="flex items-start justify-between gap-6">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 mb-2 flex-wrap">
+              <span class="pill pill-format">{{ p.format }}</span>
+              {% for r in p.risk_flags %}<span class="pill pill-risk">⚠ {{ r }}</span>{% endfor %}
+              <span class="text-xs text-white/40 font-mono">{{ p.idea_id }}</span>
+            </div>
+            <h3 class="text-xl font-semibold leading-snug">{{ p.angle }}</h3>
+            <p class="text-white/60 text-sm mt-2"><span class="text-white/40 uppercase tracking-wider text-[10px] mr-2">why now</span>{{ p.why_now }}</p>
+          </div>
+          <div class="shrink-0 text-right">
+            <div class="text-xs text-white/40 uppercase tracking-wider mb-1">confidence</div>
+            <div class="text-2xl font-semibold tabular-nums">{{ '%.2f'|format(p.confidence) }}</div>
+            <div class="meter mt-1 w-24"><div style="width: {{ (p.confidence * 100)|int }}%"></div></div>
+            {% if p.fatigue_score is defined %}
+            <div class="text-[10px] text-white/40 mt-3 uppercase tracking-wider">fatigue</div>
+            <div class="text-sm tabular-nums text-white/70">{{ '%.2f'|format(p.fatigue_score) }}</div>
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="mt-5 grid md:grid-cols-2 gap-5">
+          <div>
+            <div class="text-[10px] text-white/40 uppercase tracking-wider mb-2">Suggested titles {% if p.title_scores %}<span class="text-white/30">· ranked by {{ p.title_scores[0].source }}</span>{% endif %}</div>
+            <ul class="space-y-1.5 text-sm">
+              {% if p.title_scores %}
+                {% for ts in p.title_scores %}
+                <li class="flex items-baseline gap-2">
+                  <span class="font-mono tabular-nums text-xs shrink-0 w-9 text-right {% if loop.index <= 2 %}text-emerald-300{% else %}text-white/40{% endif %}">{{ '%.0f'|format(ts.score) }}</span>
+                  <span class="{% if loop.index <= 2 %}text-white/95{% else %}text-white/50{% endif %}">{{ ts.title }}</span>
+                </li>
+                {% endfor %}
+              {% else %}
+                {% for t in p.suggested_titles %}<li class="text-white/85">· {{ t }}</li>{% endfor %}
+              {% endif %}
+            </ul>
+          </div>
+          <div>
+            <div class="text-[10px] text-white/40 uppercase tracking-wider mb-2">Thumbnail concepts</div>
+            <ul class="space-y-1.5 text-sm">
+              {% for t in p.thumbnail_concepts %}<li class="text-white/75">· {{ t }}</li>{% endfor %}
+            </ul>
+          </div>
+        </div>
+
+        {% if p.cross_post %}
+        <details class="mt-5">
+          <summary class="text-xs text-white/50 hover:text-white/80 uppercase tracking-wider">Cross-post copy ▾</summary>
+          <div class="mt-3 grid md:grid-cols-3 gap-3">
+            {% for k, v in p.cross_post.items() %}
+            <div class="card rounded-lg p-3">
+              <div class="text-[10px] text-white/40 uppercase tracking-wider mb-1">{{ k }}</div>
+              <p class="text-sm text-white/75">{{ v }}</p>
+            </div>
+            {% endfor %}
+          </div>
+        </details>
+        {% endif %}
+
+        {% if item.outline %}
+        {% set o = item.outline %}
+        <details class="mt-6 pt-5 border-t border-white/5" open>
+          <summary class="text-xs text-white/60 hover:text-white/90 uppercase tracking-wider mb-4">
+            Outline · {{ o.estimated_runtime_min }} min · {{ o.sections|length }} sections ▾
+          </summary>
+
+          <div class="card rounded-lg p-4 mt-3 mb-4 bg-white/2">
+            <div class="text-[10px] text-white/40 uppercase tracking-wider mb-1">Cold-open hook ({{ o.cold_open_seconds }}s)</div>
+            <p class="text-sm text-white/85 italic">"{{ o.hook }}"</p>
+          </div>
+
+          <div class="space-y-3">
+            {% for s in o.sections %}
+            <div class="card rounded-lg p-4">
+              <div class="flex items-baseline justify-between gap-3 mb-2">
+                <h4 class="font-medium text-white/90">{{ loop.index }}. {{ s.title }}</h4>
+                <span class="text-xs text-white/40 tabular-nums shrink-0">{{ s.duration_sec }}s</span>
+              </div>
+              <ul class="space-y-1.5 text-sm text-white/75">
+                {% for b in s.beats %}<li class="leading-relaxed">· {{ b }}</li>{% endfor %}
+              </ul>
+              {% if s.b_roll_ideas %}
+              <div class="mt-3 pt-2 border-t border-white/5">
+                <div class="text-[10px] text-white/40 uppercase tracking-wider mb-1">B-roll</div>
+                <div class="text-xs text-white/55">{{ s.b_roll_ideas|join(' · ') }}</div>
+              </div>
+              {% endif %}
+            </div>
+            {% endfor %}
+          </div>
+
+          <div class="mt-4 card rounded-lg p-4 bg-white/2">
+            <div class="text-[10px] text-white/40 uppercase tracking-wider mb-1">CTA</div>
+            <p class="text-sm text-white/85">{{ o.cta }}</p>
+          </div>
+
+          {% if o.voice_notes %}
+          <div class="mt-3">
+            <div class="text-[10px] text-white/40 uppercase tracking-wider mb-1">Voice notes</div>
+            <ul class="space-y-1 text-sm text-white/65">
+              {% for n in o.voice_notes %}<li>· {{ n }}</li>{% endfor %}
+            </ul>
+          </div>
+          {% endif %}
+
+          {% if o.open_questions %}
+          <div class="mt-4 card rounded-lg p-3 bg-amber-950/30 border-amber-500/20">
+            <div class="text-[10px] text-amber-300/70 uppercase tracking-wider mb-2">Open questions — verify before scripting</div>
+            <ul class="space-y-1 text-sm text-amber-100/85">
+              {% for q in o.open_questions %}<li>? {{ q }}</li>{% endfor %}
+            </ul>
+          </div>
+          {% endif %}
+
+          <div class="mt-4">
+            <div class="text-[10px] text-white/40 uppercase tracking-wider mb-2">Sources to read · {{ o.sources|length }}</div>
+            <div class="space-y-2">
+              {% for src in o.sources %}
+              <div class="card rounded-lg p-3 hover:bg-white/3 {% if not src.verified %}border-amber-500/30 bg-amber-950/15{% endif %}">
+                <div class="flex items-baseline justify-between gap-2 mb-1">
+                  <a href="{{ src.url }}" target="_blank" rel="noopener" class="text-sm {% if src.verified %}text-violet-300 hover:text-violet-200{% else %}text-amber-300 hover:text-amber-200{% endif %} truncate">{{ src.title }}</a>
+                  <div class="flex gap-1.5 shrink-0">
+                    {% if not src.verified %}<span class="pill pill-risk">⚠ unverified</span>{% endif %}
+                    <span class="pill pill-platform">{{ src.kind }}</span>
+                  </div>
+                </div>
+                <p class="text-xs text-white/55">{{ src.why_it_matters }}</p>
+                <div class="text-[10px] text-white/30 font-mono mt-1 truncate">{{ src.url }}</div>
+                {% if not src.verified %}<div class="text-[10px] text-amber-300/70 mt-1">URL not in source signals — verify before quoting.</div>{% endif %}
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+
+          <div class="mt-3 text-[10px] text-white/35 text-right">
+            outline confidence {{ '%.2f'|format(o.confidence) }}
+          </div>
+        </details>
+        {% else %}
+        <div class="mt-5 text-xs text-white/40 italic">
+          Outline not yet generated for this idea.
+        </div>
+        {% endif %}
+
+        <div class="mt-5 pt-4 border-t border-white/5 text-xs text-white/40">
+          fate: <span class="text-white/70 font-mono">{{ item.row.fate }}</span>
+          · audience fit: <span class="text-white/60">{{ p.audience_fit }}</span>
+        </div>
+      </article>
+    {% endfor %}
+    </div>
+  </section>
+
+  <!-- CLUSTERS -->
+  <section class="mb-16">
+    <h2 class="text-2xl font-semibold mb-6">Trend clusters</h2>
+    <div class="grid md:grid-cols-2 gap-4">
+    {% for c in clusters %}
+      <div class="card rounded-xl p-5">
+        <div class="flex items-start justify-between gap-3 mb-2">
+          <h3 class="font-medium leading-snug">{{ c.label }}</h3>
+          <div class="text-right shrink-0">
+            <div class="text-xs text-white/40 uppercase tracking-wider">heat</div>
+            <div class="text-lg font-semibold tabular-nums">{{ '%.1f'|format(c.heat_score) }}</div>
+          </div>
+        </div>
+        <div class="flex flex-wrap gap-1.5 mb-3">
+          {% for t in c.dominant_topics %}<span class="pill pill-topic">{{ t }}</span>{% endfor %}
+        </div>
+        {% if c.representative_quote %}
+          <blockquote class="text-sm text-white/70 italic border-l-2 border-white/20 pl-3 mb-3">"{{ c.representative_quote }}"</blockquote>
+        {% endif %}
+        <div class="text-xs text-white/40">{{ c.signal_ids|length }} signal{{ 's' if c.signal_ids|length != 1 else '' }} · sentiment {{ '%+.2f'|format(c.avg_sentiment) }}</div>
+      </div>
+    {% endfor %}
+    </div>
+  </section>
+
+  <!-- AGENT TELEMETRY -->
+  <section>
+    <h2 class="text-2xl font-semibold mb-6">Agent telemetry</h2>
+    <div class="card rounded-xl overflow-hidden">
+      <table class="w-full text-sm">
+        <thead class="bg-white/5 text-white/50 text-xs uppercase tracking-wider">
+          <tr>
+            <th class="text-left px-4 py-3 font-medium">Agent</th>
+            <th class="text-left px-4 py-3 font-medium">Tier</th>
+            <th class="text-right px-4 py-3 font-medium">Runs</th>
+            <th class="text-right px-4 py-3 font-medium">Avg ms</th>
+            <th class="text-right px-4 py-3 font-medium">Avg conf</th>
+            <th class="text-right px-4 py-3 font-medium">Errs</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in agent_stats %}
+          <tr class="border-t border-white/5">
+            <td class="px-4 py-2.5 font-mono text-white/80">{{ r.agent }}</td>
+            <td class="px-4 py-2.5 text-white/60">{{ r.model_tier }}</td>
+            <td class="px-4 py-2.5 text-right tabular-nums">{{ r.n }}</td>
+            <td class="px-4 py-2.5 text-right tabular-nums text-white/70">{{ '%.0f'|format(r.avg_ms or 0) }}</td>
+            <td class="px-4 py-2.5 text-right tabular-nums text-white/70">{{ '%.2f'|format(r.avg_conf or 0) }}</td>
+            <td class="px-4 py-2.5 text-right tabular-nums {% if r.errs %}text-red-300{% else %}text-white/40{% endif %}">{{ r.errs }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer class="mt-16 text-xs text-white/30 text-center">
+    Generated by the {{ brand }} Content Engine · cycle {{ cycle_id }} · {{ generated_at }}
+  </footer>
+</main>
+
+</body>
+</html>

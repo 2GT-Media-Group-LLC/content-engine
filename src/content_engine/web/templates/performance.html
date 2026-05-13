@@ -1,0 +1,97 @@
+{% extends "layout.html" %}
+{% block title %}Performance · {{ brand }} Engine{% endblock %}
+{% block content %}
+
+<header class="mb-8">
+  <div class="text-xs tracking-[0.3em] text-white/40 uppercase">Performance</div>
+  <h1 class="text-2xl font-semibold mt-1">{{ brand }} channel + idea traceback</h1>
+</header>
+
+{% if snapshot %}
+<section class="card rounded-2xl p-6 mb-8">
+  <div class="flex items-baseline justify-between mb-4">
+    <h2 class="text-lg font-semibold">Recent video performance</h2>
+    <div class="text-xs text-white/40">Snapshot {{ snapshot.snapshot_at[:16] if snapshot.snapshot_at else 'n/a' }} · window {{ snapshot.window }}</div>
+  </div>
+
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="text-white/50 text-xs uppercase tracking-wider">
+        <tr>
+          <th class="text-left px-3 py-2 font-medium">Tier</th>
+          <th class="text-left px-3 py-2 font-medium">Title</th>
+          <th class="text-right px-3 py-2 font-medium">Views</th>
+          <th class="text-right px-3 py-2 font-medium">AVD%</th>
+          <th class="text-right px-3 py-2 font-medium">Likes</th>
+          <th class="text-right px-3 py-2 font-medium">Comments</th>
+          <th class="text-right px-3 py-2 font-medium">Subs+</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for v in snapshot.videos %}
+        <tr class="border-t border-white/5 hover:bg-white/3">
+          <td class="px-3 py-2"><span class="pill pill-format">{{ v.tier }}</span></td>
+          <td class="px-3 py-2 text-white/85">{{ v.title }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ v.views }}</td>
+          <td class="px-3 py-2 text-right tabular-nums text-white/70">{{ v.avg_view_pct }}</td>
+          <td class="px-3 py-2 text-right tabular-nums text-white/70">{{ v.likes }}</td>
+          <td class="px-3 py-2 text-right tabular-nums text-white/70">{{ v.comments }}</td>
+          <td class="px-3 py-2 text-right tabular-nums text-emerald-300">{{ v.subs_gained }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if snapshot.what_works %}
+  <div class="mt-5 grid md:grid-cols-2 gap-4 text-sm">
+    <div>
+      <div class="text-[10px] text-emerald-300/70 uppercase tracking-wider mb-2">What's working</div>
+      <ul class="space-y-1 text-white/80">{% for w in snapshot.what_works %}<li>+ {{ w }}</li>{% endfor %}</ul>
+    </div>
+    <div>
+      <div class="text-[10px] text-amber-300/70 uppercase tracking-wider mb-2">Underperforming</div>
+      <ul class="space-y-1 text-white/80">{% for w in snapshot.what_underperforms %}<li>- {{ w }}</li>{% endfor %}</ul>
+    </div>
+  </div>
+  {% endif %}
+</section>
+{% else %}
+<div class="card rounded-2xl p-6 mb-8 text-white/50 text-sm">
+  No performance snapshot yet. Run <span class="font-mono">engine sync-performance</span>
+  or wait for the next vidiq MCP refresh.
+</div>
+{% endif %}
+
+<section>
+  <h2 class="text-lg font-semibold mb-4">Idea → video traceback</h2>
+  {% if videos %}
+  <div class="space-y-3">
+  {% for v in videos %}
+    <div class="card rounded-xl p-4">
+      <div class="flex items-baseline justify-between gap-3">
+        <div class="min-w-0">
+          {% if v.idea_payload %}
+            <div class="text-xs text-white/45">From idea — {% if v.idea_id %}<a class="link font-mono" href="/idea/{{ v.idea_id }}">{{ v.idea_id }}</a>{% endif %}</div>
+            <div class="font-medium mt-0.5">{{ v.idea_payload.angle }}</div>
+          {% else %}
+            <div class="text-xs text-white/45">No linked idea</div>
+            <div class="font-medium mt-0.5">{{ v.title or v.video_id }}</div>
+          {% endif %}
+          <a href="https://youtu.be/{{ v.video_id }}" target="_blank" class="link text-xs font-mono">{{ v.video_id }}</a>
+        </div>
+        <div class="text-right tabular-nums text-xs text-white/55">
+          {% if v.views %}<div>{{ v.views }} views</div>{% endif %}
+          {% if v.ctr %}<div>{{ '%.1f'|format(v.ctr * 100) }}% CTR</div>{% endif %}
+          {% if v.published_at %}<div class="text-white/35">{{ v.published_at[:10] }}</div>{% endif %}
+        </div>
+      </div>
+    </div>
+  {% endfor %}
+  </div>
+  {% else %}
+  <div class="card rounded-xl p-5 text-sm text-white/50">No produced ideas yet. Mark an idea as <em>produced</em> with a YouTube ID to start tracking performance.</div>
+  {% endif %}
+</section>
+
+{% endblock %}

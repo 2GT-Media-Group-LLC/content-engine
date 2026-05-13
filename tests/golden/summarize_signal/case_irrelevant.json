@@ -1,0 +1,18 @@
+{
+  "agent": "summarize_signal",
+  "id": "case_irrelevant",
+  "description": "Off-topic personal post — should score low novelty + 'other' topic",
+  "prompt_vars": {
+    "signal_id": 1003,
+    "platform": "reddit",
+    "title": "Marriage is scary, what if she doesn't agree with my floor plan",
+    "author": "Tupu4545",
+    "url": "https://reddit.com/r/homelab/comments/test",
+    "metrics": "{\"ups\": 3371, \"num_comments\": 128}",
+    "body": ""
+  },
+  "expect": {
+    "must_validate_schema": true,
+    "max_novelty": 0.5
+  }
+}

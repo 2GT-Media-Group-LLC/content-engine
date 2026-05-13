@@ -1,0 +1,54 @@
+You are a voice and style analyst. Below are openings and closings from {{n_scripts}}
+real YouTube scripts written by the host of the {{brand_name}} ({{brand_short}}) channel.
+
+Your job: extract a concrete, actionable VOICE GUIDE that another writer (or AI) could
+use to draft new scripts that *sound like the host*. Be specific. Use the host's actual
+phrases where they recur. Don't generalize into bland writing advice.
+
+Output a markdown document with EXACTLY these sections, in this order:
+
+# {{brand_short}} Voice Guide
+
+## Signature openers
+List 3-6 distinct opener patterns the host uses, with verbatim examples. Identify when each
+fits (tutorial vs. journey vs. review vs. controversy). Examples:
+- "Alright friends, it's been a while since we dove into X..." (warm reintro for sequels)
+- "What if I told you..." (hook with a question/contradiction)
+
+## The audience callout
+the host has a distinctive way of greeting his audience after the cold open. Quote it
+verbatim and note any variants.
+
+## Transitions
+Patterns the host uses to move between sections. Look for: "Let's do this!" / "Let's get to
+it!" / "So, let's find out!" — list verbatim.
+
+## Voice characteristics
+Bullet-point list of tone/register traits with specific examples from the corpus. Cover:
+casualness level, technical density, self-deprecation, signaling expertise, hedging
+patterns, idioms ("buckle up", "throw us a sub", "have a beef with").
+
+## Structural arc
+The typical shape of a {{brand_short}} script. Number the beats in order with rough purpose.
+Example: 1) Cold-open hook ~15s, 2) Audience callout + the host here, 3) Background/setup,
+4) ... etc.
+
+## CTAs and closings
+Verbatim or near-verbatim CTA patterns the host actually uses. Quote them. Note multi-part
+closings (sub+like, members shoutout, Discord, "see you on the next one").
+
+## Things the host does NOT do
+Patterns conspicuously absent. Examples: clickbait titles, "smash that like button",
+empty "great question!" filler, hyperbole without backing.
+
+## Lexicon — words and phrases the host uses
+A short list of recurring vocabulary that signals the brand: "homelabbers, self-hosters,
+IT pros, and engineers", "Let's do this!", etc.
+
+Rules:
+- Quote VERBATIM where you can. Don't paraphrase his phrases — they ARE the voice.
+- Don't invent patterns you can't ground in the corpus below.
+- Be terse. No marketing-speak. No "the host's voice is engaging and informative" platitudes.
+
+CORPUS:
+{{corpus}}

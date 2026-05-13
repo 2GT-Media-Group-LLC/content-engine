@@ -1,0 +1,96 @@
+# channel.yaml — channel-specific configuration for the content engine.
+#
+# This is the *example* file checked into the repo. Copy it to channel.yaml
+# (which is gitignored) and edit for your channel:
+#
+#   cp channel.example.yaml channel.yaml
+#
+# Defaults below are tuned for a homelab / self-hosting / AI / virtualization
+# channel. Replace with your own niche.
+
+brand:
+  # Human-facing channel name. Used in prompts and report titles.
+  name: "Your Channel Name"
+  # Short token used as a brand tag. Often the channel acronym.
+  short: "YOUR"
+  # The niche topics your channel covers. Used by the idea synthesizer to
+  # constrain suggestions. Order = priority.
+  niche:
+    - homelab
+    - self-hosting
+    - AI (local + cloud)
+    - virtualization
+    - infrastructure
+    - networking
+
+# Plain-English description of your audience. Fed into every idea/outline prompt.
+audience_summary: |
+  Mid-to-high technical viewers comfortable with Linux, containers,
+  and virtualization. Not novices. Opinionated about AI and hypervisors.
+
+# Topics where your audience reliably has strong emotional reactions.
+# The synthesizer adds matching items to each idea's risk_flags so the
+# brief surfaces "this could be divisive" before you green-light it.
+divisive_topics:
+  - name: "AI (local or cloud)"
+    note: "Audience splits between AI-slop critics and enthusiasts"
+  - name: "Proxmox criticism"
+    note: "Passionate base — even fair criticism can attract pile-ons"
+
+# ─── YouTube (peers + own channel) ────────────────────────────────────────
+# The engine pulls your own recent uploads + your peer channels via the
+# Composio YOUTUBE_LIST_CHANNEL_VIDEOS action. Needs Composio + Google OAuth.
+youtube:
+  # Your channel ID (starts with UC). Find at:
+  #   https://www.youtube.com/account_advanced
+  own_channel_id: "UCXXXXXXXXXXXXXXXXXXXXXX"
+  own_channel_title: "Your Channel Name"
+  # Peer channels you want to watch as signal (NOT to copy — to know what
+  # the niche is talking about). 3-5 is the sweet spot.
+  peer_channels:
+    - handle: "@LAWRENCESYSTEMS"
+      name: "Lawrence Systems"
+    - handle: "@CraftComputing"
+      name: "Craft Computing"
+    - handle: "@JeffGeerling"
+      name: "Jeff Geerling"
+    - handle: "@ServeTheHomeVideo"
+      name: "ServeTheHome"
+
+# ─── Reddit subreddits to monitor ─────────────────────────────────────────
+# Public JSON API — no auth needed. Adjust limits to control volume vs. noise.
+reddit:
+  subreddits:
+    - { name: homelab,        limit: 15 }
+    - { name: selfhosted,     limit: 15 }
+    - { name: LocalLLaMA,     limit: 15 }
+    - { name: Proxmox,        limit: 15 }
+    - { name: HomeNetworking, limit: 12 }
+    - { name: sysadmin,       limit: 12 }
+    - { name: DataHoarder,    limit: 12 }
+    - { name: docker,         limit: 12 }
+
+# ─── Hacker News keyword search ───────────────────────────────────────────
+# Each keyword becomes a separate Algolia query. Stories matching any keyword
+# above min_points within window_days get ingested.
+hackernews:
+  queries:
+    - proxmox
+    - homelab
+    - self-hosted
+    - selfhost
+    - tailscale
+    - truenas
+    - vmware
+    - broadcom vmware
+    - virtualization
+    - kubernetes homelab
+    - ollama
+    - llama.cpp
+    - local llm
+    - local ai
+    - wireguard
+    - unifi
+    - veeam
+  min_points: 20
+  window_days: 14

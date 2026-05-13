@@ -1,0 +1,19 @@
+services:
+  gui:
+    build: .
+    container_name: 2gt-engine-gui
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      # Bind-mount the DB + data dir so the GUI sees whatever the host engine writes.
+      - ./data:/app/data:rw
+      - ./reports:/app/reports:ro
+      - ./style:/app/style:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=2)"]
+      interval: 30s
+      timeout: 3s
+      retries: 3

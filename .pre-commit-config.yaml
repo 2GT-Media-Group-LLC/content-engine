@@ -1,0 +1,20 @@
+# Run with: pre-commit install (one-time) then automatically on every commit.
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+        name: gitleaks — scan staged files for secrets
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-added-large-files
+        args: ['--maxkb=2048']
+      - id: check-yaml
+        exclude: '^(channel\.yaml|data/feeds\.yaml|data/github_repos\.yaml)$'
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+        exclude: '\.md$'

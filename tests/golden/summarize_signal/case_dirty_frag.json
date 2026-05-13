@@ -1,0 +1,22 @@
+{
+  "agent": "summarize_signal",
+  "id": "case_dirty_frag",
+  "description": "Dirty Frag CVE post — should classify as security with high novelty",
+  "prompt_vars": {
+    "signal_id": 1001,
+    "platform": "reddit",
+    "title": "New Linux kernel LPE (Dirty Frag) — no patch yet, here's the workaround",
+    "author": "webnestify",
+    "url": "https://reddit.com/r/homelab/comments/test",
+    "metrics": "{\"ups\": 826, \"num_comments\": 94}",
+    "body": "New kernel vulnerability called Dirty Frag was publicly disclosed. Universal Linux LPE, same family as Dirty Pipe. Affects every kernel from 2017 onwards. PoC public. No upstream patch yet — only a kernel-module workaround disabling esp4/esp6/rxrpc."
+  },
+  "expect": {
+    "must_validate_schema": true,
+    "min_confidence": 0.55,
+    "min_novelty": 0.7,
+    "must_include_topics_any_of": ["security"],
+    "sentiment_in": ["very_negative", "negative", "neutral"],
+    "one_line_keywords_any": ["dirty frag", "kernel", "vulnerability", "LPE", "linux"]
+  }
+}
