@@ -73,7 +73,7 @@ def collect(max_per_feed: int = 10,
             log.info("fetching %s — %s", name, url)
             # feedparser handles network + parsing; no extra session needed.
             feed = feedparser.parse(url, request_headers={
-                "User-Agent": "2GT-content-engine/0.1 (+https://2guystek.tv)",
+                "User-Agent": f"{settings.brand_short}-content-engine/0.1",
             })
             if feed.bozo and not feed.entries:
                 # bozo=True with no entries is a parse failure; with entries

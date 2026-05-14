@@ -115,7 +115,7 @@ def report(cycle_id: str):
 def gui(host: str = "127.0.0.1", port: int = 8080, reload: bool = False):
     """Launch the web GUI for idea triage + performance tracking."""
     import uvicorn
-    console.print(f"[bold green]2GT Engine GUI[/bold green]  →  http://{host}:{port}")
+    console.print(f"[bold green]{settings.brand_name} Engine GUI[/bold green]  →  http://{host}:{port}")
     uvicorn.run("content_engine.web.app:app", host=host, port=port,
                 reload=reload, log_level="info")
 
@@ -149,11 +149,11 @@ def collect():
 
 @app.command(name="sync-performance")
 def sync_performance():
-    """Refresh 2GT video performance snapshot via vidiq.
-    Updates data/2gt_perf_30d.json (read by the idea synthesizer)."""
+    """Refresh own-channel video performance snapshot via vidiq.
+    Updates data/<brand_short>_perf_30d.json (read by the idea synthesizer)."""
     from .collectors import youtube
     youtube.collect(per_channel_limit=0)  # 0 = analytics-only path
-    console.print("[green]synced[/green] 2GT performance snapshot")
+    console.print(f"[green]synced[/green] {settings.brand_name} performance snapshot")
 
 
 @app.command(name="extract-voice")
@@ -216,7 +216,7 @@ def polish(idea_id: str, out: Path | None = None):
     lines = [
         f"# Polish handoff — {idea_id}",
         "",
-        "Drop this into a Claude Code session and ask: \"polish this idea for the 2GT brief"
+        "Drop this into a Claude Code session and ask: \"polish this idea for the brief"
         " and draft a script outline.\" Claude has memory of the channel context already.",
         "",
         "## Generated draft",

@@ -1,4 +1,4 @@
-"""GitHub releases collector for the tools the 2GT audience runs.
+"""GitHub releases collector. Tracks releases for the tools your audience runs.
 
 Unauthenticated GitHub API allows 60 req/hr per IP, which is plenty at our
 volume (one request per tracked repo per cycle). Reads data/github_repos.yaml."""
@@ -20,7 +20,7 @@ log = logging.getLogger("engine.gh")
 
 _REGISTRY = settings.db_path.parent / "github_repos.yaml"
 _API = "https://api.github.com"
-_USER_AGENT = "2GT-content-engine/0.1 (+https://2guystek.tv)"
+_USER_AGENT = f"{settings.brand_short}-content-engine/0.1"
 
 
 def _load_registry(path: Path | None = None) -> list[dict]:

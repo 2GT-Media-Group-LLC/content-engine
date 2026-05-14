@@ -33,7 +33,8 @@ _FIRST_PERSON = re.compile(r"\b(I|my|I'm|I've)\b")
 
 
 def _heuristic_score(title: str) -> float:
-    """Return 0-100. Calibrated against patterns common in 2GT's breakouts."""
+    """Return 0-100. Calibrated against patterns common in technical-channel
+    breakouts (homelab / self-host / virtualization / AI niches)."""
     if not title:
         return 0.0
     s = 50.0  # neutral baseline
@@ -52,7 +53,7 @@ def _heuristic_score(title: str) -> float:
     if _PARENS.search(title):     s += 2
     if _VS.search(title):         s += 5
     if _NEGATIVE.search(title):   s += 6   # contrarian/curiosity-driven
-    if _FIRST_PERSON.search(title): s += 4 # first-person POV (2GT signature)
+    if _FIRST_PERSON.search(title): s += 4 # first-person POV ("Why I…" framing)
 
     # Penalties
     if title.isupper():           s -= 10  # ALL CAPS feels spammy

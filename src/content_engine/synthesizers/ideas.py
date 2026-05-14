@@ -1,7 +1,8 @@
-"""Idea generator: takes labeled clusters + 2GT context → IdeaCandidate(s).
+"""Idea generator: takes labeled clusters + channel context → IdeaCandidate(s).
 
-Uses the heaviest local tier by default (gemma4:31b) since synthesis quality matters more
-than throughput here. Escalates to fail-open (None) if even heavy can't produce valid JSON.
+Uses the heaviest local tier by default since synthesis quality matters more
+than throughput here. Escalates to fail-open (None) if even heavy can't
+produce valid JSON.
 """
 from __future__ import annotations
 
@@ -35,10 +36,11 @@ def _load_voice_guide() -> str:
 
 
 def _load_recent_videos() -> str:
-    """Recent 2GT video performance context — what's working on the channel right now.
-    Loaded from data/2gt_perf_30d.json (vidiq snapshot) so the synthesizer can
-    weight ideas toward formats/topics that have actually been performing."""
-    p = settings.db_path.parent / "2gt_perf_30d.json"
+    """Recent own-channel video performance context — what's working on the
+    channel right now. Loaded from data/<brand_short>_perf_30d.json (vidiq
+    snapshot) so the synthesizer can weight ideas toward formats/topics that
+    have actually been performing."""
+    p = settings.db_path.parent / f"{settings.brand_short.lower()}_perf_30d.json"
     if p.exists():
         try:
             data = json.loads(p.read_text())
@@ -59,13 +61,9 @@ def _load_recent_videos() -> str:
                 for w in data["what_underperforms"]: lines.append(f"  - {w}")
             return "\n".join(lines)
         except Exception as e:
-            log.warning("failed to parse 2gt_perf_30d.json: %s", e)
-    # Fallback to hand-written context if no perf snapshot exists.
-    return (
-        "- Rack build (homelab/self-host journey, payoff = aesthetics)\n"
-        "- Personal AI journey (homelab/self-host bend, change-of-heart narrative)\n"
-        "- Pegaprox (Proxmox + AI — divisive)\n"
-    )
+            log.warning("failed to parse %s: %s", p.name, e)
+    # Fallback when no perf snapshot exists yet.
+    return "(no recent performance snapshot — run `engine sync-performance`)"
 
 
 def _load_prior_ideas_by_fate(days: int = 90) -> dict[str, list[dict]]:

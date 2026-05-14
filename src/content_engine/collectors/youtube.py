@@ -1,10 +1,11 @@
 """YouTube collector via Composio's YOUTUBE_LIST_CHANNEL_VIDEOS (OAuth, free).
-Pulls recent uploads from peer channels + the 2GT channel and ingests them as
-RawSignals.
+Pulls recent uploads from peer channels + your configured own channel and
+ingests them as RawSignals.
 
-The 2GT analytics snapshot (data/2gt_perf_30d.json) is NOT refreshed here —
-that needs vidiq's analytics API which isn't exposed in Composio v3. Use
-`engine sync-performance` (manual MCP path) until vidiq lands in Composio."""
+The own-channel analytics snapshot (data/<brand_short>_perf_30d.json) is NOT
+refreshed here — that needs vidiq's analytics API which isn't exposed in
+Composio v3. Use `engine sync-performance` (manual MCP path) until vidiq lands
+in Composio."""
 from __future__ import annotations
 
 import logging

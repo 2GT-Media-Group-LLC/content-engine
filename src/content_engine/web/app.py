@@ -9,7 +9,7 @@ Routes:
   POST /run                spawn `engine collect && engine run` detached
   GET  /run/status         JSON: running state, current cycle, log tail
   GET  /run/status/fragment HTMX fragment for live polling banner
-  GET  /performance   2GT video performance + idea→video traceback
+  GET  /performance   own-channel video performance + idea→video traceback
   GET  /health        container health probe
 
 Reads the same SQLite DB the engine writes to. Triggered runs fork a
@@ -37,7 +37,7 @@ from ..db import get_conn, init_db
 
 log = logging.getLogger("engine.web")
 
-app = FastAPI(title="2GT Content Engine", docs_url=None, redoc_url=None)
+app = FastAPI(title=f"{settings.brand_name} Content Engine", docs_url=None, redoc_url=None)
 
 _HERE = Path(__file__).parent
 # Build Jinja env explicitly with cache_size=0 — works around a Jinja2 3.1.6 +
@@ -469,7 +469,7 @@ def performance(request: Request):
          "idea_payload": json.loads(v["idea_payload"]) if v["idea_payload"] else None}
         for v in videos
     ]
-    perf_path = settings.db_path.parent / "2gt_perf_30d.json"
+    perf_path = settings.db_path.parent / f"{settings.brand_short.lower()}_perf_30d.json"
     perf_snapshot = json.loads(perf_path.read_text()) if perf_path.exists() else None
     return templates.TemplateResponse(
         request, "performance.html",
