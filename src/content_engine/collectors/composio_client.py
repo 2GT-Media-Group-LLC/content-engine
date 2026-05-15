@@ -3,11 +3,19 @@ is set; otherwise returns a NoopClient that logs but doesn't fetch — so the en
 can run end-to-end on local data even before the SDK is wired."""
 from __future__ import annotations
 
+import json
 import logging
 import os
+import time
+from pathlib import Path
 from typing import Any
 
 log = logging.getLogger("engine.composio")
+
+# Where to cache the last-known-good {toolkit -> connected_account_id} mapping.
+# Lets us survive transient HTTP 500s from Composio's connectedAccounts endpoint
+# without falling all the way through to "<toolkit>_not_authorized" for the run.
+_CACHE_PATH = Path.home() / ".cache" / "content-engine" / "composio_connected.json"
 
 
 class NoopComposio:
@@ -39,18 +47,51 @@ def get_client() -> Any:
         # v3 doesn't auto-select them — passing nothing yields:
         #   InvalidParams: `connected_account` cannot be `None`
         accounts_by_toolkit: dict[str, str] = {}
-        try:
-            for a in (client.connected_accounts.get() or []):
-                # Accept either snake or camel from the SDK.
-                app = (getattr(a, "appUniqueId", None)
-                       or getattr(a, "appName", None)
-                       or getattr(a, "app_unique_id", None))
-                aid = getattr(a, "id", None)
-                status = (getattr(a, "status", "") or "").upper()
-                if app and aid and status == "ACTIVE":
-                    accounts_by_toolkit[app.lower()] = aid
-        except Exception as e:
-            log.warning("could not list Composio connected accounts: %s", e)
+        last_err: Exception | None = None
+        # Composio's connectedAccounts endpoint occasionally returns HTTP 500
+        # transiently. Retry with exponential backoff before giving up.
+        for attempt in range(3):
+            try:
+                for a in (client.connected_accounts.get() or []):
+                    # Accept either snake or camel from the SDK.
+                    app = (getattr(a, "appUniqueId", None)
+                           or getattr(a, "appName", None)
+                           or getattr(a, "app_unique_id", None))
+                    aid = getattr(a, "id", None)
+                    status = (getattr(a, "status", "") or "").upper()
+                    if app and aid and status == "ACTIVE":
+                        accounts_by_toolkit[app.lower()] = aid
+                last_err = None
+                break
+            except Exception as e:
+                last_err = e
+                wait = 1.5 ** attempt  # 1s, 1.5s, 2.25s
+                log.info("connected_accounts.get attempt %d/3 failed (%s); "
+                         "retry in %.1fs", attempt + 1, e, wait)
+                time.sleep(wait)
+        if last_err is not None:
+            # Fall back to the on-disk cache from a prior successful run so
+            # one bad upstream call doesn't disable every auth'd toolkit.
+            log.warning("could not list Composio connected accounts after 3 "
+                        "attempts: %s", last_err)
+            try:
+                if _CACHE_PATH.exists():
+                    cached = json.loads(_CACHE_PATH.read_text())
+                    if isinstance(cached, dict) and cached:
+                        accounts_by_toolkit = {k: v for k, v in cached.items()
+                                                if isinstance(v, str)}
+                        log.warning("using cached toolkit mapping from %s "
+                                    "(%d entries)",
+                                    _CACHE_PATH, len(accounts_by_toolkit))
+            except Exception as ce:
+                log.warning("could not load cached toolkit mapping: %s", ce)
+        else:
+            # Persist the fresh mapping for the next run's fallback.
+            try:
+                _CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+                _CACHE_PATH.write_text(json.dumps(accounts_by_toolkit, indent=2))
+            except Exception as ce:
+                log.debug("could not write toolkit cache: %s", ce)
         log.info("composio toolkits connected: %s",
                  sorted(accounts_by_toolkit.keys()) or "(none)")
 
