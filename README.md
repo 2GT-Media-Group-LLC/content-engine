@@ -11,11 +11,6 @@ Runs entirely on local Ollama models (Gemma 4 + Qwen 3). Zero per-cycle cost.
 Zero data sent to outside services unless you explicitly opt into a third-party
 integration (see [Optional integrations](#optional-integrations-composio--vidiq)).
 
-> **Plain-English explainer:** [`docs/how-it-works.html`](docs/how-it-works.html)
-> (or the [PDF version](docs/how-it-works.pdf)) — shareable with non-technical
-> stakeholders. The doc uses the 2GuysTek YouTube channel as a worked example
-> of what one configured deployment looks like; the engine itself is generic.
-
 ---
 
 ## Table of contents
