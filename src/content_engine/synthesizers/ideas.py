@@ -255,9 +255,17 @@ def _select_diverse_clusters(rows: list, top_n: int, max_per_topic: int = 2,
 
 
 def generate_for_clusters(cycle_id: str, top_n: int = 5,
-                           max_per_topic: int = 2) -> int:
+                           max_per_topic: int = 2,
+                           pool_multiplier: int = 3) -> int:
     """Generate ideas for the top-N clusters, enforcing topic diversity AND
-    fate-aware deduplication against prior rejected/parked ideas."""
+    fate-aware deduplication against prior rejected/parked ideas.
+
+    pool_multiplier controls backfill: we actually select up to
+    top_n * pool_multiplier clusters as a candidate pool, then stop the
+    generation loop after we've successfully *saved* top_n ideas. This way
+    clusters dropped by the post-generation similarity check (model
+    regurgitated a previously-rejected angle) or by generation failure
+    don't reduce yield below the target."""
     with get_conn() as conn:
         all_rows = conn.execute(
             """SELECT * FROM clusters WHERE cycle_id = ?
@@ -271,16 +279,19 @@ def generate_for_clusters(cycle_id: str, top_n: int = 5,
              "%d rejected/parked angles embedded for similarity check",
              len(rejected_sets), len(rejected_vecs))
 
+    pool_size = max(top_n, top_n * pool_multiplier)
     clusters, skipped = _select_diverse_clusters(
-        list(all_rows), top_n, max_per_topic,
+        list(all_rows), pool_size, max_per_topic,
         rejected_sets=rejected_sets,
     )
     if skipped:
         log.info("skipped %d cluster(s) for overlap with rejected ideas: %s",
                  len(skipped), [(s['label'][:40], f"{s['overlap']:.0%}") for s in skipped[:5]])
-    log.info("selected %d clusters across %d distinct primary topics",
+    log.info("selected %d clusters across %d distinct primary topics "
+             "(target=%d, pool=%d for backfill)",
              len(clusters),
-             len({json.loads(c['dominant_topics_json'])[0] for c in clusters}) if clusters else 0)
+             len({json.loads(c['dominant_topics_json'])[0] for c in clusters}) if clusters else 0,
+             top_n, pool_size)
 
     if not clusters:
         log.info("no clusters to generate ideas from")
@@ -294,6 +305,10 @@ def generate_for_clusters(cycle_id: str, top_n: int = 5,
     skipped_for_similarity: list[tuple[str, str, float]] = []
 
     for c in clusters:
+        if n >= top_n:
+            log.info("hit idea target (%d); stopping after %d of %d pool clusters tried",
+                     top_n, clusters.index(c), len(clusters))
+            break
         signal_ids = json.loads(c["signal_ids_json"])
         with get_conn() as conn:
             sums = conn.execute(
