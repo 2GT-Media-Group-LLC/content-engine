@@ -12,6 +12,11 @@ Hard rules:
   - Complete truncated sentences — if you can't tell what was meant, drop the fragment.
   - No new facts. If the draft says "salvaged Quadro M4000", don't change to "Quadro RTX 4000".
   - Keep the technical voice. Don't soften, don't editorialize, don't add hype.
+  - Respect the length limits below — these are HARD caps enforced by the schema.
+    If you can't fit the cleanup within the limit, prefer the shorter, sharper version.
+
+Length limits per field (characters, including spaces):
+{{length_limits}}
 
 Output format: a JSON object with the same field names as the input, each value the
 cleaned-up version. Output ONLY the JSON, no preamble, no commentary.

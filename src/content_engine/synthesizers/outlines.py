@@ -112,6 +112,7 @@ def generate_for_ideas(cycle_id: str, only_top_n: int | None = None) -> int:
             agent_name="generate_outline", draft=draft,
             fields_to_rewrite=["hook", "cta"],
             cycle_id=cycle_id, tier="polish",
+            schema=ScriptOutline,
         )
         try:
             final = ScriptOutline.model_validate(polished)

@@ -81,29 +81,78 @@ def _clean_truncated(text: str) -> str:
     return text
 
 
+def _extract_max_lengths(schema: type[BaseModel] | None,
+                          fields: list[str]) -> dict[str, int]:
+    """Pull per-field max_length constraints from a Pydantic model for the named
+    fields. Returns {field_name: max_length}. Fields without max_length omitted."""
+    out: dict[str, int] = {}
+    if schema is None:
+        return out
+    for fname in fields:
+        fi = schema.model_fields.get(fname)
+        if fi is None:
+            continue
+        # Pydantic v2 stashes string constraints in field metadata.
+        for m in (fi.metadata or []):
+            mx = getattr(m, "max_length", None)
+            if mx is not None:
+                out[fname] = int(mx)
+                break
+    return out
+
+
+def _trim_to_max_length(text: str, max_len: int) -> str:
+    """Hard cap text at max_len. Prefer cutting at the last sentence boundary
+    that fits; otherwise fall back to a word boundary; last resort, hard cut."""
+    if len(text) <= max_len:
+        return text
+    head = text[:max_len]
+    # Sentence boundary in the head?
+    m = list(re.finditer(r"[.!?][\"')\]]?(?=\s|$)", head))
+    if m:
+        return head[: m[-1].end()].rstrip()
+    # Word boundary fallback.
+    sp = head.rfind(" ")
+    if sp > max_len // 2:
+        return head[:sp].rstrip()
+    # Last resort.
+    return head.rstrip()
+
+
 def polish_fields(
     *, agent_name: str, draft: dict, fields_to_rewrite: list[str],
     cycle_id: str | None = None, tier: str = "polish",
+    schema: type[BaseModel] | None = None,
 ) -> tuple[dict, AgentResult]:
     """Rewrite the given prose fields of `draft` using the heavy local model in
     unconstrained mode. Returns (polished_dict, AgentResult).
 
     Strategy:
       1. Compute a "draft_json" containing only the fields we want rewritten.
-      2. Call model in non-JSON mode with a focused editor prompt.
-      3. Parse the model's reply (it should still be JSON because the prompt asks).
-      4. On parse failure, fall back to the original (don't break the pipeline).
-      5. Run heuristic artifact scrub on whatever we end up with.
+      2. If `schema` is given, extract per-field max_length constraints and
+         (a) include them in the editor prompt so the model knows the hard
+         limits, and (b) post-truncate any overshoot at a sentence boundary
+         so the polished result still re-validates against `schema`.
+      3. Call model in non-JSON mode with a focused editor prompt.
+      4. Parse the model's reply (it should still be JSON because the prompt asks).
+      5. On parse failure, fall back to the original (don't break the pipeline).
+      6. Run heuristic artifact scrub on whatever we end up with.
     """
     fields = [f for f in fields_to_rewrite if isinstance(draft.get(f), str) and draft[f].strip()]
     if not fields:
         return draft, AgentResult(agent=agent_name, model_tier=tier, output=draft, elapsed_ms=0)
 
     sub = {f: draft[f] for f in fields}
+    max_lengths = _extract_max_lengths(schema, fields)
+    length_limits = (
+        "\n".join(f"  - {f}: max {n} characters" for f, n in max_lengths.items())
+        if max_lengths else "(no hard length limits — keep concise)"
+    )
     prompt = render_prompt(
         "polish_prose",
         draft_json=json.dumps(sub, ensure_ascii=False, indent=2),
         fields_to_rewrite=", ".join(fields),
+        length_limits=length_limits,
     )
     model = {
         "polish": settings.polish.ollama_tag,
@@ -130,7 +179,14 @@ def polish_fields(
         for f in fields:
             new_val = polished_sub.get(f)
             if isinstance(new_val, str) and new_val.strip():
-                polished[f] = _clean_truncated(new_val.strip())
+                cleaned = _clean_truncated(new_val.strip())
+                mx = max_lengths.get(f)
+                if mx and len(cleaned) > mx:
+                    log.info("polish %s.%s exceeded max_length (%d > %d); "
+                             "trimming at sentence boundary",
+                             agent_name, f, len(cleaned), mx)
+                    cleaned = _trim_to_max_length(cleaned, mx)
+                polished[f] = cleaned
 
         with get_conn() as conn:
             record_agent_run(

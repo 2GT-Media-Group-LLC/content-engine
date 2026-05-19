@@ -372,6 +372,7 @@ def generate_for_clusters(cycle_id: str, top_n: int = 5,
                 agent_name="generate_idea", draft=draft,
                 fields_to_rewrite=list(_PROSE_FIELDS),
                 cycle_id=cycle_id, tier="polish",
+                schema=IdeaCandidate,
             )
             artifacts_post = sum(
                 len(detect_artifacts(polished.get(f, ""))) for f in _PROSE_FIELDS
