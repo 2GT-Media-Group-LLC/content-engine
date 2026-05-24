@@ -19,9 +19,10 @@ integration (see [Optional integrations](#optional-integrations-composio--vidiq)
 - [Hardware + prerequisites](#hardware--prerequisites)
 - [Setup, step by step](#setup-step-by-step)
 - [Sources (out of the box)](#sources-out-of-the-box)
-- [Optional integrations: Composio + vidiq](#optional-integrations-composio--vidiq)
+- [YouTube data provider: VidIQ (default) or Composio (fallback)](#youtube-data-provider-vidiq-default-or-composio-fallback)
+  - [What is VidIQ? Do I need it?](#what-is-vidiq-do-i-need-it)
   - [What is Composio? Do I need it?](#what-is-composio-do-i-need-it)
-  - [What is vidiq? Do I need it?](#what-is-vidiq-do-i-need-it)
+  - [Switching providers + cost reference](#switching-providers--cost-reference)
 - [Configuration files](#configuration-files)
 - [Optional: weekly autonomous schedule + auto-start GUI (macOS)](#optional-weekly-autonomous-schedule--auto-start-gui-macos)
 - [Commands](#commands)
@@ -164,17 +165,29 @@ Edit those to match the tools/vendors your audience cares about.
 
 ### 4. (Optional) Set up `.env`
 
-`setup.sh` scaffolds an `.env` file. The only variable you might need to
-change up front:
+`setup.sh` copies `.env.example` into `.env` for you. Defaults look like:
 
 ```dotenv
-# Where Ollama listens. Default is fine if Ollama is local.
+# Where Ollama listens. Default is fine if Ollama runs locally.
 OLLAMA_HOST=http://localhost:11434
 
-# OPTIONAL — only needed for YouTube auto-collection or vidiq title scoring.
-# See "Optional integrations" below before adding this.
-# COMPOSIO_API_KEY=ak_...
+# YouTube data provider — vidiq (recommended) | composio (legacy) | noop
+YOUTUBE_PROVIDER=vidiq
+
+# Get yours from https://app.vidiq.com (Settings → API / Integrations).
+# VIDIQ_API_KEY=
+
+# Optional: only if you self-host or proxy the MCP endpoint.
+# VIDIQ_MCP_ENDPOINT=https://mcp.vidiq.com/mcp
+
+# Legacy Composio fallback. See docs/SECURITY.md for the migration history.
+# COMPOSIO_API_KEY=
 ```
+
+Without a YouTube provider key the engine still runs — Reddit, Hacker News,
+RSS, and GitHub releases all work unauthenticated and typically deliver
+80%+ of weekly signal volume. See [YouTube data provider](#youtube-data-provider-vidiq-default-or-composio-fallback)
+below for the trade-offs.
 
 ### 5. First run
 
@@ -199,94 +212,139 @@ The `gui` command stays in the foreground. In a separate shell you can:
 | Hacker News | `channel.yaml` → `hackernews.queries` | **none** (Algolia HN search) |
 | RSS / Atom blogs | `data/feeds.yaml` | **none** |
 | GitHub releases | `data/github_repos.yaml` | **none** (unauthenticated, 60 req/hr) |
-| YouTube (peers + own) | `channel.yaml` → `youtube` | **Composio + Google OAuth** (optional — see below) |
+| YouTube (peers + own) | `channel.yaml` → `youtube`; provider chosen via `YOUTUBE_PROVIDER` in `.env` | **VidIQ API key** (default) or Composio OAuth (legacy) — both optional, see below |
 
 You can run the engine end-to-end with **zero auth**: drop the YouTube
 collector and the engine will happily ideate from the four no-auth sources.
 
 ---
 
-## Optional integrations: Composio + vidiq
+## YouTube data provider: VidIQ (default) or Composio (fallback)
 
-These two third-party services are **completely optional**. The engine works
-without either. Add them only if you want the specific capabilities each one
-unlocks.
+The engine talks to YouTube through a pluggable provider, selected by
+`YOUTUBE_PROVIDER` in `.env`. Both providers are **optional** — without
+either, the engine still ideates from Reddit, Hacker News, RSS, and
+GitHub-releases (typically 80%+ of weekly signal volume). Pick a provider
+when you want peer-channel signal, real own-channel performance data, or
+CTR-scored titles.
+
+> **Security note.** Composio.dev was compromised in May 2026. The engine
+> migrated its default YouTube path to VidIQ MCP and kept Composio only as
+> an optional fallback for users without a VidIQ subscription. See
+> [`docs/SECURITY.md`](docs/SECURITY.md) for the incident record and the
+> manual cleanup steps if you previously had Composio set up.
+
+### What is VidIQ? Do I need it?
+
+**[VidIQ](https://vidiq.com/)** is a paid YouTube analytics + creator
+tooling service. It exposes its full toolset through an MCP server at
+`https://mcp.vidiq.com/mcp`. The engine talks to it directly from Python
+via a small streamable-HTTP client — no third-party broker, no OAuth
+flow, no Google Cloud project. Just one API key in `.env`.
+
+**Setup (5 minutes):**
+
+1. Sign up / sign in at <https://app.vidiq.com> on a paid tier that
+   includes API access.
+2. Authorize your own YouTube channel inside VidIQ (Settings → Channels →
+   add channel and grant access). Required for the analytics path.
+3. Grab your API key from VidIQ's settings.
+4. Drop it in `.env`:
+   ```dotenv
+   YOUTUBE_PROVIDER=vidiq
+   VIDIQ_API_KEY=...
+   ```
+5. `engine collect` and `engine sync-performance` now work end-to-end.
+
+**What you get with VidIQ:**
+
+- **Peer + own-channel video collection** — `vidiq_channel_videos` pulls
+  each channel's recent uploads (own) or most-popular videos (peers, as a
+  proven trend signal). Free-tier descriptions, tags, view/like/comment
+  counts via batch enrichment (`vidiq_get_videos_by_ids`).
+- **Real CTR-scored titles** — `vidiq_score_title` returns a 0-100
+  prediction calibrated on actual YouTube data. The brief sorts each
+  idea's suggested titles by this score; heuristic still kicks in as a
+  per-title fallback if a call fails.
+- **Automatic 30-day performance snapshot** — `engine sync-performance`
+  combines `vidiq_channel_analytics` + `vidiq_channel_stats` and writes
+  `data/<brand_short>_perf_30d.json`. The idea synthesizer reads that file
+  to weight new ideas toward formats and topics that are actually
+  performing on **your** channel. (Composio's path cannot do this — see
+  below.)
+
+**Cost:** Most VidIQ tools charge 5 credits per call.  A typical weekly
+cycle for one channel + 4 peers costs **~120 credits** all-in (channel
+videos, batch enrichment, analytics, ~15 title scores). VidIQ paid tiers
+typically include thousands of credits per month, so this comfortably fits.
+
+**Skip VidIQ if:** you don't have a paid subscription, you don't want a
+paid dependency at all, or you're fine running with no YouTube signal at
+all (heuristic title scorer is solid for technical-channel content).
 
 ### What is Composio? Do I need it?
 
-**[Composio](https://composio.dev/)** is a managed-OAuth aggregator. Instead
-of you wiring up a Google Cloud project, an OAuth consent screen, and a
-refresh-token-handling auth flow just to call the YouTube Data API, you:
+**[Composio](https://composio.dev/)** is a managed-OAuth aggregator. It
+used to be the engine's default YouTube path: you'd grant the engine
+YouTube access through Composio's OAuth flow, and the engine would call
+`YOUTUBE_LIST_CHANNEL_VIDEOS` through Composio's Python SDK.
 
-1. Create a free Composio account at <https://app.composio.dev>
-2. Click "Connect" on the YouTube tile and grant consent in the browser
+**Composio is now a legacy fallback only.** Reasons to still use it:
+
+- You don't have a VidIQ subscription and don't want a paid dependency.
+- You want a no-payment OAuth-only path for peer-channel uploads.
+
+**Setup:**
+
+1. Create a Composio account at <https://app.composio.dev>
+2. Click "Connect" on the YouTube tile and grant consent
 3. Copy your API key from **Settings → API Keys**
+4. Drop it in `.env`:
+   ```dotenv
+   YOUTUBE_PROVIDER=composio
+   COMPOSIO_API_KEY=...
+   ```
 
-Composio then exposes YouTube (and 200+ other services) as one Python SDK call:
-`client.tools.execute("YOUTUBE_LIST_CHANNEL_VIDEOS", arguments={...})`. It
-holds the OAuth tokens, refreshes them, and the engine never sees your Google
-credentials.
+**Limitations vs VidIQ:**
 
-**What you get if you set `COMPOSIO_API_KEY`:**
-- The `youtube` collector pulls recent uploads from your own channel + the
-  peer channels you listed in `channel.yaml`. This is the fastest way to know
-  "what topics is the niche actively covering" so the engine can flag fatigue.
-- The `title_scorer` can call vidiq's `VIDIQ_SCORE_TITLE` action through the
-  Composio SDK (see next section).
+- **No channel analytics.** Composio v3 doesn't expose VidIQ's analytics
+  endpoint, so `engine sync-performance` can't auto-populate the
+  performance snapshot. You'd need to maintain
+  `data/<brand_short>_perf_30d.json` by hand.
+- **No per-video enrichment.** Composio's YouTube wrapper returns
+  metadata only (title, ID, publishedAt) — no view/like counts, no
+  descriptions in `RawSignal.body`. The summarizer and clusterer see
+  less signal per video.
+- **Title scoring** still works through `VIDIQ_SCORE_TITLE` if you also
+  connect the VidIQ toolkit inside Composio.
 
-**What you give up by skipping it:**
-- The YouTube collector logs a warning and skips. You still get Reddit, HN,
-  RSS, and GitHub signal — typically 80%+ of weekly volume.
-- Title scoring falls back to a deterministic heuristic (length, numbers,
-  parentheticals, contrarian language, etc.). Cheaper, but less calibrated
-  than vidiq's CTR model.
+**After the 2026 breach** — if you had Composio set up before, run
+`engine composio-disconnect` and follow the printed steps to revoke
+server-side access. The engine will keep working — VidIQ is the default.
 
-**Cost:** Composio has a generous free tier — fine for a single-channel weekly
-cron. No credit card required to sign up.
+### Switching providers + cost reference
 
-**Skip Composio if:** you want a fully zero-auth setup, you're fine without
-peer-channel signal, or you already have your own YouTube Data API wiring.
+The choice lives in one env var:
 
-### What is vidiq? Do I need it?
+```dotenv
+YOUTUBE_PROVIDER=vidiq      # or composio, or noop
+```
 
-**[vidiq](https://vidiq.com/)** is a third-party YouTube analytics + creator
-tooling service. The engine uses exactly two things from it, both via
-Composio:
+You can also override for a single run with `--provider`:
 
-1. **`VIDIQ_SCORE_TITLE`** — vidiq's CTR-prediction model returns a 0-100
-   score for a candidate title. The title scorer ranks each idea's
-   `suggested_titles` so the brief surfaces the strongest one first.
-2. **Channel performance snapshot** — `engine sync-performance` pulls your
-   own-channel metrics (last 30 days of views, AVD, subs gained per video)
-   and writes them to `data/<brand_short>_perf_30d.json`. The idea
-   synthesizer reads that file so it can weight new ideas toward
-   formats/topics that are actually performing on **your** channel.
+```bash
+engine collect --provider vidiq             # one-off test against VidIQ
+engine collect --provider composio          # fall back temporarily
+engine sync-performance --provider vidiq    # only vidiq supports this
+```
 
-**What you give up by skipping it:**
-- Title scoring uses the heuristic backend instead of vidiq. The heuristic
-  catches the obvious clickability levers (length sweet spot 35-65 chars,
-  numbers, year tags, parentheticals, contrarian language, first-person
-  framing, ALL-CAPS penalty, "ultimate guide" penalty, clickbait-phrase
-  penalty). It's deterministic, runs offline, and costs zero credits.
-- The synthesizer can't weight ideas by your channel's actual recent
-  performance. Ideas are still generated — they just don't know that, e.g.,
-  your last three Proxmox videos overperformed.
+**Setup matrix:**
 
-**Cost:** vidiq is a paid SaaS. Title scoring costs ~5 credits per call. A
-weekly cycle ranks ~15 titles, so ~75 credits/week. The free tier covers a
-handful of cycles for evaluation.
-
-**Skip vidiq if:** you don't want a paid third-party dependency, you're early
-on your channel and don't have meaningful performance data yet, or the
-heuristic title score is good enough for your workflow.
-
-**TL;DR setup matrix:**
-
-| Setup | What you can do |
-|---|---|
-| No Composio, no vidiq | Reddit + HN + RSS + GitHub. Heuristic titles. Generic perf context. **Default.** |
-| Composio only | All of the above + YouTube peer-channel + own-channel signal. Heuristic titles. |
-| Composio + vidiq | All of the above + vidiq-scored titles + perf-weighted idea synthesis. **Most powerful.** |
+| Setup | What you can do | Cost / week |
+|---|---|---|
+| **Neither** (default if no keys) | Reddit + HN + RSS + GitHub signal. Heuristic title scoring. No own-channel perf context. | $0 |
+| **Composio only** | Adds peer + own YouTube uploads (titles only, no metrics, no descriptions). Heuristic titles unless you also connect VidIQ inside Composio. No auto perf snapshot. | $0 (free Composio tier) |
+| **VidIQ only** | Adds peer + own YouTube uploads with full metrics, descriptions, tags. VidIQ-scored titles. Auto-refreshed perf snapshot. **Recommended.** | ~120 credits (~$0 if your VidIQ plan already includes them) |
 
 ---
 
@@ -296,7 +354,8 @@ heuristic title score is good enough for your workflow.
 |---|---|---|
 | `channel.yaml` | brand, niche, audience, peers, subreddits, HN queries | gitignored |
 | `channel.example.yaml` | template + documented defaults | tracked |
-| `.env` | `COMPOSIO_API_KEY`, `OLLAMA_HOST` | gitignored |
+| `.env` | `YOUTUBE_PROVIDER`, `VIDIQ_API_KEY`, `COMPOSIO_API_KEY`, `OLLAMA_HOST` | gitignored |
+| `.env.example` | template + documented defaults for `.env` | tracked |
 | `data/feeds.yaml` | RSS/Atom registry | tracked |
 | `data/github_repos.yaml` | GitHub release tracking | tracked |
 | `style/voice_guide.md` | (optional) extracted personal voice profile | gitignored |
