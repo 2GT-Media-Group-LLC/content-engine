@@ -149,6 +149,45 @@ class ScriptOutline(BaseModel):
     confidence: float = Field(..., ge=0, le=1)
 
 
+# ─── Provider-agnostic YouTube shapes ─────────────────────────────────────────
+# These are the shapes the engine consumes internally, regardless of which
+# YouTube data provider (vidiq, composio, future) produced them. Providers
+# normalize their wire formats into these models so collectors and the perf
+# snapshot writer don't care where the data came from.
+class VideoRecord(BaseModel):
+    """One video, normalized across providers. Field names match what
+    signals_from_youtube_videos() and _load_recent_videos() already consume."""
+    videoId: str
+    title: str
+    publishedAt: str | None = None   # ISO 8601 string; keep as str for snapshot round-trip
+    # Optional metrics — providers fill what they have. Missing = unknown.
+    views: int | None = None
+    likes: int | None = None
+    comments: int | None = None
+    avg_view_pct: float | None = None
+    min_watched: int | None = None
+    subs_gained: int | None = None
+    tier: str | None = None  # "breakout" | "strong" | "evergreen" | ... — synthesizer-assigned
+
+
+class ChannelAnalytics(BaseModel):
+    """Channel-level snapshot for the idea synthesizer's performance context.
+    Matches the existing data/<brand_short>_perf_30d.json schema consumed by
+    synthesizers/ideas.py:_load_recent_videos()."""
+    channel_id: str
+    channel_title: str
+    snapshot_at: str  # ISO timestamp
+    window: str = "30d"
+    current_subs: int | None = None
+    subs_gained_30d: int | None = None
+    videos_published_30d: int | None = None
+    videos: list[VideoRecord] = Field(default_factory=list)
+    # Optional narrative summaries — providers may compute or leave empty for the
+    # synthesizer to fill from raw metrics.
+    what_works: list[str] = Field(default_factory=list)
+    what_underperforms: list[str] = Field(default_factory=list)
+
+
 # ─── Agent envelope ───────────────────────────────────────────────────────────
 class AgentResult(BaseModel):
     """Wraps every agent call. Lets the harness make routing decisions."""

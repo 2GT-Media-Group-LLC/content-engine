@@ -38,8 +38,18 @@ divisive_topics:
     note: "Passionate base — even fair criticism can attract pile-ons"
 
 # ─── YouTube (peers + own channel) ────────────────────────────────────────
-# The engine pulls your own recent uploads + your peer channels via the
-# Composio YOUTUBE_LIST_CHANNEL_VIDEOS action. Needs Composio + Google OAuth.
+# The engine pulls your own recent uploads + your peer channels via a
+# pluggable provider, selected by the YOUTUBE_PROVIDER env var in .env:
+#
+#   vidiq    (default, recommended) — direct VidIQ MCP. Needs VIDIQ_API_KEY
+#            and a paid VidIQ account. Unlocks `engine sync-performance`
+#            (automatic 30-day analytics snapshot for the idea synthesizer).
+#   composio (legacy / fallback)    — Composio YOUTUBE_LIST_CHANNEL_VIDEOS.
+#            Needs COMPOSIO_API_KEY + Google OAuth on app.composio.dev.
+#            Does NOT support analytics. NOT recommended post-2026 Composio
+#            breach — see docs/SECURITY.md.
+#   noop     — runs the rest of the pipeline without YouTube signal.
+#
 youtube:
   # Your channel ID (starts with UC). Find at:
   #   https://www.youtube.com/account_advanced

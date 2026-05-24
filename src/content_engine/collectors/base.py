@@ -21,14 +21,21 @@ def ingest_signals(signals: Iterable[RawSignal | dict]) -> int:
     return n
 
 
-def signals_from_youtube_videos(videos: list[dict], channel: dict) -> list[RawSignal]:
-    """Convert vidiq_channel_videos response items into RawSignals."""
+def signals_from_youtube_videos(videos, channel: dict) -> list[RawSignal]:
+    """Convert YouTube video records into RawSignals.
+
+    Accepts dicts (Composio raw payloads, vidiq raw payloads) OR VideoRecord
+    Pydantic instances. Field names checked in both their vidiq-native
+    (camelCase: viewCount, likeCount) and provider-normalized (snake-case:
+    views, likes) shapes so this stays stable across providers."""
     out: list[RawSignal] = []
     channel_handle = channel.get("title") or channel.get("channelTitle") or channel.get("channelId")
     for v in videos:
+        if hasattr(v, "model_dump"):  # VideoRecord or any Pydantic model
+            v = v.model_dump(exclude_none=False)
         try:
             posted_at = datetime.fromisoformat(v["publishedAt"].replace("Z", "+00:00"))
-        except (KeyError, ValueError):
+        except (KeyError, ValueError, AttributeError):
             posted_at = None
         out.append(RawSignal(
             platform=SourcePlatform.youtube,
@@ -39,11 +46,12 @@ def signals_from_youtube_videos(videos: list[dict], channel: dict) -> list[RawSi
             body="",  # transcripts come later via vidiq_video_transcript if needed
             posted_at=posted_at,
             metrics={
-                "views": v.get("viewCount"),
-                "likes": v.get("likeCount"),
-                "comments": v.get("commentCount"),
+                "views": v.get("views") or v.get("viewCount"),
+                "likes": v.get("likes") or v.get("likeCount"),
+                "comments": v.get("comments") or v.get("commentCount"),
                 "vph": v.get("vph"),
                 "engagement_rate": v.get("engagementRate"),
+                "avg_view_pct": v.get("avg_view_pct") or v.get("averageViewPercentage"),
             },
             extra={
                 "channel_id": channel.get("channelId") or v.get("channelId"),

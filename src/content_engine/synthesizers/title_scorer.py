@@ -1,23 +1,25 @@
 """Title scoring post-pass for ideas. Two backends:
 
-- `vidiq`: real CTR scoring via vidiq's title scorer (needs Composio Python SDK
-  + COMPOSIO_API_KEY in the environment). Costs 5 credits per call.
+- `vidiq` (or `composio`, depending on YOUTUBE_PROVIDER): real CTR scoring via
+  the active YouTube provider. Costs ~5 credits per call.
 - `heuristic`: deterministic fallback. Cheap, runs offline, captures the
   obvious clickability levers (length, numbers, parentheticals, all-caps,
   brackets, year tags, etc.).
 
-Pipeline always falls back to heuristic if vidiq is unreachable, so we never
-crash a cycle for missing API access. Each score is tagged with its source.
+Pipeline always falls back to heuristic if the provider is unreachable, so we
+never crash a cycle for missing API access. Each score is tagged with its
+source (the provider's `.name`, e.g. `vidiq` / `composio`, or `heuristic`).
 """
 from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 from dataclasses import dataclass
 from datetime import datetime
 
+from ..config import settings
+from ..collectors.yt_provider import get_provider
 from ..db import get_conn
 
 log = logging.getLogger("engine.titles")
@@ -73,35 +75,23 @@ class TitleScore:
     source: str  # "vidiq" or "heuristic"
 
 
-def _score_vidiq(title: str) -> float | None:
-    """Try vidiq via Composio Python SDK. Returns None if unreachable."""
-    api_key = os.getenv("COMPOSIO_API_KEY")
-    if not api_key:
-        return None
-    try:
-        # Lazy import — composio_core is optional.
-        from composio import Composio  # type: ignore
-
-        client = Composio(api_key=api_key)
-        result = client.tools.execute(
-            "VIDIQ_SCORE_TITLE",
-            arguments={"title": title, "type": "long"},
-        )
-        # Vidiq returns a 'score' key. Schema may vary; be defensive.
-        data = result if isinstance(result, dict) else {}
-        return float(data.get("score", data.get("data", {}).get("score", 0)))
-    except Exception as e:
-        log.debug("vidiq score failed for %r: %s", title[:40], str(e)[:120])
-        return None
-
-
 def score_titles(titles: list[str]) -> list[TitleScore]:
-    """Score a list of titles. Tries vidiq first, falls back to heuristic."""
+    """Score a list of titles. Tries the active YouTube provider first
+    (vidiq or composio per YOUTUBE_PROVIDER); falls back to the heuristic
+    scorer per-title if the provider returns None for that title."""
+    provider = get_provider()
+    own_channel = settings.own_channel_id or None
     out: list[TitleScore] = []
     for t in titles:
-        v = _score_vidiq(t)
+        v: float | None = None
+        if provider.is_available():
+            try:
+                v = provider.score_title(t, channel_id=own_channel, kind="long")
+            except Exception as e:
+                log.debug("%s score_title raised for %r: %s",
+                          provider.name, t[:40], str(e)[:120])
         if v is not None:
-            out.append(TitleScore(title=t, score=v, source="vidiq"))
+            out.append(TitleScore(title=t, score=v, source=provider.name))
         else:
             out.append(TitleScore(title=t, score=_heuristic_score(t), source="heuristic"))
     return out
@@ -144,13 +134,14 @@ def score_cycle_ideas(cycle_id: str) -> dict:
         "titles_scored": n_titles,
         "sources": sources_used,
     }
+    provider_name = get_provider().name
     with get_conn() as conn:
         conn.execute(
             """INSERT INTO agent_runs
                (cycle_id, agent, model_tier, output_json, elapsed_ms, created_at)
                VALUES (?, ?, ?, ?, ?, ?)""",
             (
-                cycle_id, "score_titles", "(vidiq+heuristic)",
+                cycle_id, "score_titles", f"({provider_name}+heuristic)",
                 json.dumps(summary), 0, datetime.utcnow().isoformat(),
             ),
         )

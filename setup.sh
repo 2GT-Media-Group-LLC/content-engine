@@ -69,14 +69,31 @@ if [ ! -f .env ]; then
   if [ -f .env.example ]; then
     cp .env.example .env
   else
-    cat > .env <<EOF
-# Optional: enables auth'd sources (YouTube via Composio).
-# Get from https://app.composio.dev → Settings → API Keys
-# COMPOSIO_API_KEY=ak_...
+    cat > .env <<'EOF'
+# Where Ollama listens. Default is fine when Ollama is local.
 OLLAMA_HOST=http://localhost:11434
+
+# ─── YouTube data provider ───────────────────────────────────────────────────
+# Which backend serves YouTube data (peers + own-channel uploads, title
+# scoring, performance analytics). Pick ONE; uncomment + fill its API key.
+#
+#   vidiq    (recommended) — direct VidIQ MCP. Paid VidIQ account required.
+#                            Unlocks `engine sync-performance` (auto analytics).
+#   composio (legacy)      — Composio toolkit. NOT recommended post-2026 breach.
+#   noop                   — run the engine without YouTube signal.
+YOUTUBE_PROVIDER=vidiq
+
+# Get yours from https://app.vidiq.com (Settings → API / Integrations).
+# VIDIQ_API_KEY=
+
+# Optional override if you self-host VidIQ's MCP or proxy it.
+# VIDIQ_MCP_ENDPOINT=https://mcp.vidiq.com/mcp
+
+# Legacy Composio fallback. Get from https://app.composio.dev → Settings → API Keys.
+# COMPOSIO_API_KEY=ak_
 EOF
   fi
-  echo "✓ created .env — drop your COMPOSIO_API_KEY in there if you want YouTube auto-collect"
+  echo "✓ created .env — set YOUTUBE_PROVIDER and the matching API key, then re-run engine commands"
 else
   echo "✓ .env exists"
 fi

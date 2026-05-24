@@ -109,6 +109,20 @@ class Settings:
     confidence_retry_below: float = 0.55
     confidence_escalate_below: float = 0.35
 
+    # ─── YouTube data provider selection ─────────────────────────────────────
+    # Which backend serves YouTube data (peer/own channel uploads, title
+    # scoring, performance analytics). Values: "vidiq" (default), "composio",
+    # or "noop". Per-provider auth is read from env:
+    #   vidiq:    VIDIQ_API_KEY     (single bearer token to mcp.vidiq.com/mcp)
+    #   composio: COMPOSIO_API_KEY  (legacy path; kept as fallback only)
+    youtube_provider: str = field(
+        default_factory=lambda: (os.getenv("YOUTUBE_PROVIDER") or "vidiq").strip().lower()
+    )
+    vidiq_mcp_endpoint: str = field(
+        default_factory=lambda: (os.getenv("VIDIQ_MCP_ENDPOINT")
+                                  or "https://mcp.vidiq.com/mcp").strip()
+    )
+
     # ─── Channel identity (loaded from channel.yaml) ─────────────────────────
     brand_name: str = field(
         default_factory=lambda: _CHANNEL.get("brand", {}).get("name", "Your Channel")

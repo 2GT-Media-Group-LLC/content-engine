@@ -121,39 +121,100 @@ def gui(host: str = "127.0.0.1", port: int = 8080, reload: bool = False):
 
 
 @app.command()
-def collect():
+def collect(
+    provider: str = typer.Option(
+        "", "--provider",
+        help="Override YOUTUBE_PROVIDER for this run (vidiq | composio | noop).",
+    ),
+):
     """Pull fresh signals from every configured source.
 
     Sources:
       - reddit: direct public JSON (no auth)
-      - youtube: vidiq/Composio (needs COMPOSIO_API_KEY + OAuth)
+      - youtube: via active provider (vidiq by default, composio as fallback)
       - blog: RSS/Atom feeds in data/feeds.yaml
       - hackernews: Algolia HN search (no auth)
       - github: GitHub releases in data/github_repos.yaml (unauth, 60/hr)
     """
     from .collectors import reddit, youtube, feeds, hackernews, github_releases
+    yt_kwargs = {"force_provider": provider} if provider else {}
     results = []
     results.append(reddit.collect())
-    results.append(youtube.collect())
+    results.append(youtube.collect(**yt_kwargs))
     results.append(feeds.collect())
     results.append(hackernews.collect())
     results.append(github_releases.collect())
     t = Table(title="Collection summary", show_header=True, header_style="bold magenta")
-    t.add_column("Platform"); t.add_column("Ingested"); t.add_column("Errors")
+    t.add_column("Platform"); t.add_column("Provider"); t.add_column("Ingested"); t.add_column("Errors")
     for r in results:
         err = r.get("errors") or []
         err_str = ("; ".join(err)[:100] + ("…" if len(err) > 2 else "")) if err else "-"
-        t.add_row(r["platform"], str(r["ingested"]), err_str)
+        t.add_row(r["platform"], r.get("provider", "-"), str(r["ingested"]), err_str)
     console.print(t)
 
 
 @app.command(name="sync-performance")
-def sync_performance():
-    """Refresh own-channel video performance snapshot via vidiq.
-    Updates data/<brand_short>_perf_30d.json (read by the idea synthesizer)."""
-    from .collectors import youtube
-    youtube.collect(per_channel_limit=0)  # 0 = analytics-only path
-    console.print(f"[green]synced[/green] {settings.brand_name} performance snapshot")
+def sync_performance(
+    provider: str = typer.Option(
+        "", "--provider",
+        help="Override YOUTUBE_PROVIDER for this run (vidiq | composio).",
+    ),
+):
+    """Refresh the own-channel performance snapshot via the active provider.
+
+    Updates data/<brand_short>_perf_30d.json — read by the idea synthesizer
+    for per-cycle performance context. Only vidiq currently supports this
+    (Composio v3 doesn't expose vidiq's analytics endpoint)."""
+    import json as _json
+    from .collectors.yt_provider import get_provider
+
+    p = get_provider(force=provider or None)
+    console.print(f"[dim]provider={p.name}[/dim]")
+    if not p.is_available():
+        console.print(f"[red]provider {p.name} unavailable[/red] — check API key in .env")
+        raise typer.Exit(code=2)
+
+    own_id = settings.own_channel_id
+    if not own_id:
+        console.print("[red]no own_channel_id configured[/red] in channel.yaml")
+        raise typer.Exit(code=2)
+
+    snapshot = p.get_channel_analytics(own_id, days=30)
+    if snapshot is None:
+        console.print(f"[yellow]provider {p.name} doesn't support analytics[/yellow] "
+                       f"— snapshot not refreshed. Edit data/{settings.brand_short.lower()}_perf_30d.json "
+                       f"manually or switch to YOUTUBE_PROVIDER=vidiq.")
+        raise typer.Exit(code=1)
+
+    out_path = settings.db_path.parent / f"{settings.brand_short.lower()}_perf_30d.json"
+    out_path.write_text(_json.dumps(snapshot.model_dump(exclude_none=False), indent=2))
+    console.print(f"[green]synced[/green] {settings.brand_name} performance snapshot "
+                   f"→ {out_path.name} ({len(snapshot.videos)} videos)")
+
+
+@app.command(name="composio-disconnect")
+def composio_disconnect():
+    """Scrub locally-stored Composio credentials + print revocation steps.
+
+    Run this after migrating to YOUTUBE_PROVIDER=vidiq if you want to close
+    the Composio blast radius. Removes ~/.cache/content-engine/composio_connected.json
+    and tells you what to revoke on app.composio.dev's side."""
+    from pathlib import Path as _Path
+    cache = _Path.home() / ".cache" / "content-engine" / "composio_connected.json"
+    if cache.exists():
+        cache.unlink()
+        console.print(f"[green]removed[/green] {cache}")
+    else:
+        console.print(f"[dim]no cache file at {cache}[/dim]")
+    console.print()
+    console.print("[bold yellow]Manual steps to fully revoke Composio access:[/bold yellow]")
+    console.print("  1. Sign in at https://app.composio.dev")
+    console.print("  2. Go to Settings → Connected Accounts")
+    console.print("  3. Disconnect YouTube (and any other toolkit you connected)")
+    console.print("  4. Go to Settings → API Keys and delete the API key your engine was using")
+    console.print("  5. Remove COMPOSIO_API_KEY=… from this project's .env")
+    console.print()
+    console.print("[dim]The engine will keep working — VidIQ is the default provider.[/dim]")
 
 
 @app.command(name="extract-voice")
