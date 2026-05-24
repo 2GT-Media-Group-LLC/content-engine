@@ -43,7 +43,10 @@ def signals_from_youtube_videos(videos, channel: dict) -> list[RawSignal]:
             url=f"https://youtu.be/{v['videoId']}",
             author=channel_handle,
             title=v.get("title") or v.get("videoTitle") or "",
-            body="",  # transcripts come later via vidiq_video_transcript if needed
+            # Use the description if the enrichment pass populated it; transcripts
+            # (longer + cleaner signal) would come from vidiq_video_transcript
+            # later if/when we wire that in.
+            body=(v.get("description") or v.get("body") or "")[:8000],
             posted_at=posted_at,
             metrics={
                 "views": v.get("views") or v.get("viewCount"),
@@ -58,6 +61,7 @@ def signals_from_youtube_videos(videos, channel: dict) -> list[RawSignal]:
                 "channel_title": channel_handle,
                 "duration_sec": v.get("videoDuration"),
                 "is_owned": channel.get("is_owned", False),
+                "tags": v.get("tags") or [],
             },
         ))
     return out

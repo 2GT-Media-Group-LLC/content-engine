@@ -49,6 +49,15 @@ class YouTubeProvider(Protocol):
         Empty list on auth failure or transient error (logged)."""
         ...
 
+    def enrich_videos(self, video_ids: list[str]) -> dict[str, dict]:
+        """Batch-fetch view/like/comment/description data for the given video
+        IDs. Returns a {videoId → metrics_dict} map. Providers that can't
+        enrich should return {} so callers degrade gracefully.
+
+        VidIQ's vidiq_get_videos_by_ids is batched (up to 50 IDs per call at
+        5 credits per call), so enriching a full collect cycle is cheap."""
+        ...
+
     def score_title(
         self, title: str, *, channel_id: str | None = None,
         video_id: str | None = None, kind: str = "long",
@@ -81,6 +90,9 @@ class NoopProvider:
 
     def list_channel_videos(self, channel, limit=12, *, recent=True):
         return []
+
+    def enrich_videos(self, video_ids):
+        return {}
 
     def score_title(self, title, *, channel_id=None, video_id=None, kind="long"):
         return None

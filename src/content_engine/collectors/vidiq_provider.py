@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -78,6 +79,59 @@ class VidIQProvider:
             if rec is not None:
                 out.append(rec)
         log.debug("vidiq_channel_videos(%s): %d videos", channel, len(out))
+        return out
+
+    # ─── Batch enrich (view/like/comment + description) ─────────────────────
+    def enrich_videos(self, video_ids: list[str]) -> dict[str, dict]:
+        """Batch-fetch metrics + description for each video ID. Returns a
+        {videoId → metrics_dict} mapping with keys:
+
+            views, likes, comments      ← per-video counts
+            description                  ← full body, fed into RawSignal.body
+            duration_sec                 ← parsed from ISO-8601 duration
+            tags, topic_categories       ← bonus context for clustering
+
+        vidiq_get_videos_by_ids accepts up to 50 IDs per call at 5 credits
+        per call, so we chunk and merge. Tolerant of missing IDs (silently
+        absent from the result map)."""
+        if not video_ids:
+            return {}
+        # De-dup while preserving order — saves credits if the caller
+        # accidentally passes the same ID across batches.
+        seen: set[str] = set()
+        unique: list[str] = []
+        for vid in video_ids:
+            if isinstance(vid, str) and vid and vid not in seen:
+                seen.add(vid)
+                unique.append(vid)
+
+        out: dict[str, dict] = {}
+        for i in range(0, len(unique), 50):
+            chunk = unique[i:i + 50]
+            try:
+                resp = self._client.call_tool(
+                    "vidiq_get_videos_by_ids", {"videoIds": chunk},
+                )
+            except Exception as e:
+                log.warning("vidiq_get_videos_by_ids(chunk of %d) failed: %s",
+                            len(chunk), e)
+                continue
+            for v in _iter_video_list(resp):
+                vid = v.get("id") or v.get("videoId")
+                if not isinstance(vid, str):
+                    continue
+                out[vid] = {
+                    "views": _coerce_int(v.get("viewCount") or v.get("views")),
+                    "likes": _coerce_int(v.get("likeCount") or v.get("likes")),
+                    "comments": _coerce_int(v.get("commentCount") or v.get("comments")),
+                    "description": v.get("description") or "",
+                    "duration_sec": _iso_duration_to_sec(v.get("duration")),
+                    "tags": v.get("tags") or [],
+                    "topic_categories": v.get("topicCategories") or [],
+                    "thumbnail": v.get("thumbnail"),
+                }
+        log.debug("enriched %d/%d video ids via vidiq_get_videos_by_ids",
+                  len(out), len(unique))
         return out
 
     # ─── CTR score for a title ───────────────────────────────────────────────
@@ -258,6 +312,28 @@ def _extract_video_list(raw: Any) -> list[dict]:
                 if isinstance(v.get(k2), list):
                     return v[k2]
     return []
+
+
+# Alias — _extract_video_list and _iter_video_list serve the same purpose;
+# kept as a separate name in case enrichment ever needs a different shape.
+_iter_video_list = _extract_video_list
+
+
+_ISO_DURATION_RE = re.compile(
+    r"^PT(?:(?P<h>\d+)H)?(?:(?P<m>\d+)M)?(?:(?P<s>\d+)S)?$"
+)
+
+
+def _iso_duration_to_sec(d: Any) -> int | None:
+    """Parse YouTube's ISO-8601 duration ('PT19M30S' → 1170). Returns None
+    on anything unparseable so callers don't have to special-case."""
+    if not isinstance(d, str):
+        return None
+    m = _ISO_DURATION_RE.match(d.strip())
+    if not m:
+        return None
+    parts = m.groupdict(default="0")
+    return int(parts["h"]) * 3600 + int(parts["m"]) * 60 + int(parts["s"])
 
 
 def _video_record_from_vidiq(v: dict) -> VideoRecord | None:

@@ -65,6 +65,13 @@ class ComposioProvider:
             return []
         return _videos_from_youtube_payload(resp)
 
+    # ─── Batch enrich (not supported via Composio) ───────────────────────────
+    def enrich_videos(self, video_ids: list[str]) -> dict[str, dict]:
+        """Composio's YouTube wrapper doesn't expose a batch metrics endpoint
+        — only the per-channel video listing. Returns an empty mapping; the
+        engine just won't have view/like data for peer videos on this path."""
+        return {}
+
     # ─── CTR score for a title ───────────────────────────────────────────────
     def score_title(
         self, title: str, *, channel_id: str | None = None,
