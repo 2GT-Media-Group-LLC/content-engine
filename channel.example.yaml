@@ -80,6 +80,28 @@ reddit:
     - { name: DataHoarder,    limit: 12 }
     - { name: docker,         limit: 12 }
 
+# ─── Comment mining (vidiq provider only) ─────────────────────────────────
+# Mines top comment threads from your channel + peer channels for questions,
+# requests, and pain points — ingested as signals so audience asks compete
+# for heat directly against Reddit/HN trends. One provider call per channel
+# per cycle (5 vidiq credits each).
+comments:
+  enabled: true
+  per_channel: 30        # comment threads to scan per channel
+
+# ─── Outlier scan (vidiq provider only) ───────────────────────────────────
+# Finds breakout videos across the WHOLE niche — videos massively
+# overperforming their channel's baseline — beyond your fixed peer list.
+# One call per keyword per cycle (5 credits each). Defaults to your first
+# three brand.niche topics if keywords is omitted.
+outliers:
+  enabled: true
+  per_keyword: 8
+  # keywords:            # override the niche-derived defaults
+  #   - homelab
+  #   - self-hosted
+  #   - proxmox
+
 # ─── Hacker News keyword search ───────────────────────────────────────────
 # Each keyword becomes a separate Algolia query. Stories matching any keyword
 # above min_points within window_days get ingested.

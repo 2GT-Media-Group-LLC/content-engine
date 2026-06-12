@@ -1,0 +1,16 @@
+A YouTube viewer wants to find a video with this angle:
+
+  "{{angle}}"
+
+Topics: {{topics}}
+
+What 2-4 word search phrase would they type into YouTube search? Give the
+most natural, highest-traffic phrasing — what a real person searches, not a
+title. Lowercase. No quotes, no punctuation.
+
+Examples of good output: "proxmox backup tutorial", "self hosted password
+manager", "local llm hardware".
+
+Output ONLY JSON matching the schema:
+  - keyword: the search phrase
+  - confidence: 0-1

@@ -22,6 +22,7 @@ class SourcePlatform(str, Enum):
     blog = "blog"            # vendor blogs + tech press via RSS/Atom
     hackernews = "hackernews"
     github = "github"        # GitHub releases
+    youtube_comments = "youtube_comments"  # audience questions mined from comments
 
 
 class RawSignal(BaseModel):
@@ -146,6 +147,24 @@ class ScriptOutline(BaseModel):
     sources: conlist(ResearchSource, min_length=1, max_length=10)  # type: ignore[valid-type]
     open_questions: list[str] = Field(default_factory=list,
                                        description="things to verify before scripting")
+    confidence: float = Field(..., ge=0, le=1)
+
+
+# ─── Editorial critique ───────────────────────────────────────────────────────
+class IdeaCritique(BaseModel):
+    """Output of the critic pass — a quality gate between generation and the
+    brief. Schema-constrained so the verdict is machine-actionable."""
+    hook_strength: float = Field(..., ge=0, le=1,
+                                  description="would the first 15s earn a click+stay")
+    specificity: float = Field(..., ge=0, le=1,
+                                description="concrete claim vs. generic listicle energy")
+    freshness: float = Field(..., ge=0, le=1,
+                              description="novel for this channel vs. fatigue territory")
+    audience_fit: float = Field(..., ge=0, le=1)
+    overall: float = Field(..., ge=0, le=1)
+    verdict: Literal["pass", "revise"]
+    feedback: str = Field(..., max_length=500,
+                           description="actionable notes for one revision round")
     confidence: float = Field(..., ge=0, le=1)
 
 

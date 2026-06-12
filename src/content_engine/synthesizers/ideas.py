@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 from ..config import settings
 from ..db import get_conn
 from ..ollama_client import run_agent
-from ..schemas import IdeaCandidate
+from ..schemas import IdeaCandidate, IdeaCritique
 from .editor import polish_fields, detect_artifacts
 
 log = logging.getLogger("engine.ideas")
@@ -26,6 +26,53 @@ _PROSE_FIELDS = ("angle", "why_now", "audience_fit")
 
 def _idea_id(cluster_id: int, label: str) -> str:
     return "idea_" + hashlib.sha1(f"{cluster_id}|{label}".encode()).hexdigest()[:12]
+
+
+def _polish_idea(result: IdeaCandidate, cycle_id: str) -> IdeaCandidate:
+    """Prose polish pass (unconstrained mode) over the free-text fields.
+    Catches Q4-quant artifacts that JSON-mode bakes in. Falls back to the
+    unpolished draft if the polished version fails re-validation."""
+    draft = result.model_dump(mode="json")
+    artifacts_pre = sum(
+        len(detect_artifacts(draft.get(f, ""))) for f in _PROSE_FIELDS
+    )
+    if artifacts_pre == 0 and not any(len(draft.get(f, "")) > 0 for f in _PROSE_FIELDS):
+        return result
+    polished, _ = polish_fields(
+        agent_name="generate_idea", draft=draft,
+        fields_to_rewrite=list(_PROSE_FIELDS),
+        cycle_id=cycle_id, tier="polish",
+        schema=IdeaCandidate,
+    )
+    artifacts_post = sum(
+        len(detect_artifacts(polished.get(f, ""))) for f in _PROSE_FIELDS
+    )
+    log.info("idea %s: polish artifacts %d → %d",
+             draft["idea_id"], artifacts_pre, artifacts_post)
+    try:
+        return IdeaCandidate.model_validate(polished)
+    except Exception as e:
+        log.warning("polished idea %s failed re-validation, keeping draft: %s",
+                    draft["idea_id"], str(e)[:200])
+        return result
+
+
+def _critique_idea(idea: IdeaCandidate, editorial_guide: str,
+                   cycle_id: str) -> IdeaCritique | None:
+    """Heavy-tier editorial quality gate. None on failure (fail-open: an
+    uncritiqued idea still ships — the gate must never starve the brief)."""
+    result, _ = run_agent(
+        agent_name="critique_idea",
+        prompt_name="critique_idea",
+        schema=IdeaCritique,
+        prompt_vars={
+            "editorial_guide": editorial_guide,
+            "idea_json": idea.model_dump_json(indent=2),
+        },
+        starting_tier="heavy",
+        cycle_id=cycle_id,
+    )
+    return result
 
 
 def _load_voice_guide() -> str:
@@ -297,8 +344,10 @@ def generate_for_clusters(cycle_id: str, top_n: int = 5,
         log.info("no clusters to generate ideas from")
         return 0
 
+    from .retro import load_guide
     voice = _load_voice_guide()
     recent_vids = _load_recent_videos()
+    editorial_guide = load_guide()
     prior_buckets = _load_prior_ideas_by_fate()
     prior = _format_prior_ideas_for_prompt(prior_buckets)
     n = 0
@@ -323,29 +372,36 @@ def generate_for_clusters(cycle_id: str, top_n: int = 5,
         )
 
         idea_id = _idea_id(c["id"], c["label"])
-        result, _ = run_agent(
-            agent_name="generate_idea",
-            prompt_name="generate_idea",
-            schema=IdeaCandidate,
-            prompt_vars={
-                "audience_summary": settings.audience_summary,
-                "recent_videos": recent_vids,
-                "voice_guide": voice,
-                "peer_channels": ", ".join(settings.peer_channels),
-                "prior_ideas": prior,
-                "label": c["label"],
-                "heat_score": f"{c['heat_score']:.2f}",
-                "avg_sentiment": f"{c['avg_sentiment']:.2f}",
-                "dominant_topics": c["dominant_topics_json"],
-                "representative_quote": (c["representative_quote"] or "")[:240],
-                "summaries": summary_block,
-                "signal_ids": json.dumps(signal_ids),
-                "cluster_id": c["id"],
-                "idea_id": idea_id,
-            },
-            starting_tier="heavy",
-            cycle_id=cycle_id,
-        )
+
+        def _attempt(revision_notes: str) -> IdeaCandidate | None:
+            res, _ = run_agent(
+                agent_name="generate_idea",
+                prompt_name="generate_idea",
+                schema=IdeaCandidate,
+                prompt_vars={
+                    "audience_summary": settings.audience_summary,
+                    "recent_videos": recent_vids,
+                    "voice_guide": voice,
+                    "peer_channels": ", ".join(settings.peer_channels),
+                    "editorial_guide": editorial_guide,
+                    "prior_ideas": prior,
+                    "revision_notes": revision_notes,
+                    "label": c["label"],
+                    "heat_score": f"{c['heat_score']:.2f}",
+                    "avg_sentiment": f"{c['avg_sentiment']:.2f}",
+                    "dominant_topics": c["dominant_topics_json"],
+                    "representative_quote": (c["representative_quote"] or "")[:240],
+                    "summaries": summary_block,
+                    "signal_ids": json.dumps(signal_ids),
+                    "cluster_id": c["id"],
+                    "idea_id": idea_id,
+                },
+                starting_tier="heavy",
+                cycle_id=cycle_id,
+            )
+            return res
+
+        result = _attempt("")
         if not result:
             log.warning("idea gen failed for cluster %d", c["id"])
             continue
@@ -361,32 +417,30 @@ def generate_for_clusters(cycle_id: str, top_n: int = 5,
             skipped_for_similarity.append((result.angle[:90], prev_angle[:90], score))
             continue
 
-        # Pass 2 — prose polish in unconstrained mode. Catches Q4-quant artifacts
-        # (doubled words, leaked tokens, weird hyphenation) that JSON-mode bakes in.
-        draft = result.model_dump(mode="json")
-        artifacts_pre = sum(
-            len(detect_artifacts(draft.get(f, ""))) for f in _PROSE_FIELDS
-        )
-        if artifacts_pre > 0 or any(len(draft.get(f, "")) > 0 for f in _PROSE_FIELDS):
-            polished, _ = polish_fields(
-                agent_name="generate_idea", draft=draft,
-                fields_to_rewrite=list(_PROSE_FIELDS),
-                cycle_id=cycle_id, tier="polish",
-                schema=IdeaCandidate,
-            )
-            artifacts_post = sum(
-                len(detect_artifacts(polished.get(f, ""))) for f in _PROSE_FIELDS
-            )
-            log.info("idea %s: polish artifacts %d → %d",
-                     draft["idea_id"], artifacts_pre, artifacts_post)
-            try:
-                final = IdeaCandidate.model_validate(polished)
-            except Exception as e:
-                log.warning("polished idea %s failed re-validation, keeping draft: %s",
-                            draft["idea_id"], str(e)[:200])
-                final = result
-        else:
-            final = result
+        final = _polish_idea(result, cycle_id)
+
+        # Editorial critic gate: a heavy-tier rubric pass. One revision round
+        # for ideas that don't clear the bar — fewer, better ideas beats more.
+        critique = _critique_idea(final, editorial_guide, cycle_id)
+        if critique and critique.verdict == "revise":
+            log.info("critic: REVISE idea %s (overall %.2f) — %s",
+                     idea_id, critique.overall, critique.feedback[:120])
+            notes = ("CRITIC FEEDBACK ON YOUR PREVIOUS ATTEMPT — fix this in "
+                     f"your revision:\n  {critique.feedback}\n"
+                     f"  (previous angle was: {final.angle[:160]})")
+            revised = _attempt(notes)
+            if revised:
+                too_similar, _, _ = _is_too_similar_to_rejected(
+                    revised.angle, rejected_vecs)
+                if not too_similar:
+                    final = _polish_idea(revised, cycle_id)
+                    recheck = _critique_idea(final, editorial_guide, cycle_id)
+                    if recheck:
+                        critique = recheck
+
+        payload = json.loads(final.model_dump_json())
+        if critique:
+            payload["critique"] = critique.model_dump(mode="json")
 
         with get_conn() as conn:
             conn.execute(
@@ -395,7 +449,7 @@ def generate_for_clusters(cycle_id: str, top_n: int = 5,
                    VALUES (?, ?, ?, ?)""",
                 (
                     final.idea_id, cycle_id,
-                    final.model_dump_json(),
+                    json.dumps(payload),
                     datetime.utcnow().isoformat(),
                 ),
             )

@@ -58,6 +58,12 @@ def _gather(cycle_id: str) -> dict:
                GROUP BY agent, model_tier ORDER BY agent, model_tier""",
             (cycle_id,),
         ).fetchall()
+        health_row = conn.execute(
+            """SELECT output_json FROM agent_runs
+               WHERE cycle_id=? AND agent='pipeline_health'
+               ORDER BY created_at DESC LIMIT 1""",
+            (cycle_id,),
+        ).fetchone()
 
     return {
         "cycle_id": cycle_id,
@@ -83,6 +89,8 @@ def _gather(cycle_id: str) -> dict:
             for i in ideas
         ],
         "agent_stats": [dict(r) for r in agent_stats],
+        "health": (json.loads(health_row["output_json"])
+                    if health_row and health_row["output_json"] else None),
     }
 
 

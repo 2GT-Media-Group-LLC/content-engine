@@ -103,6 +103,27 @@ class ComposioProvider:
                     "data/<brand_short>_perf_30d.json manually.")
         return None
 
+    # ─── Extended capabilities (vidiq-only; Composio path degrades) ──────────
+    def get_comments(self, *, channel=None, video_id=None, limit=20):
+        return []
+
+    def get_transcript(self, video_id):
+        return None
+
+    def find_outliers(self, *, keyword=None, channels=None,
+                      published_within="thisMonth", limit=20):
+        return []
+
+    def keyword_research(self, keyword):
+        return None
+
+    def generate_titles(self, *, title, description=None, previous_titles=None, n=5):
+        return []
+
+    def generate_thumbnail(self, *, title, description=None, direction=None,
+                           transcript=None):
+        return None
+
     # ─── Private helpers ─────────────────────────────────────────────────────
     def _probe_youtube_auth(self) -> bool:
         """Cheap 1-video call to verify the YouTube toolkit is connected."""

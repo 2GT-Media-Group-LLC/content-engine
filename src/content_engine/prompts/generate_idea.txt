@@ -15,6 +15,12 @@ PEER CHANNELS WORTH WATCHING (signal, not copy):
 KNOWN DIVISIVE TOPICS — flag these in risk_flags but do not avoid:
 {{divisive_topics_block}}
 
+EDITORIAL GUIDE — distilled from the owner's actual triage decisions. This is
+the owner's taste, generalized. It outranks your own instincts about what makes
+a good video for this channel:
+
+{{editorial_guide}}
+
 PRIOR IDEAS HISTORY — read carefully. The user has actively triaged earlier briefs.
 You MUST respect these signals, not just acknowledge them.
 
@@ -51,6 +57,8 @@ SUMMARIES IN THIS CLUSTER:
 {{summaries}}
 
 ---
+
+{{revision_notes}}
 
 Produce an IdeaCandidate. Requirements:
   - angle: a sharp, specific angle — not "Top 10 self-hosted apps", but e.g.

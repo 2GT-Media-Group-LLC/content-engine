@@ -179,6 +179,41 @@ class Settings:
     def hn_window_days(self) -> int:
         return int((_CHANNEL.get("hackernews") or {}).get("window_days", 14))
 
+    # ─── Comment mining (vidiq-only; channel-mode = 1 credit-call per channel) ─
+    @property
+    def comments_enabled(self) -> bool:
+        return bool((_CHANNEL.get("comments") or {}).get("enabled", True))
+
+    @property
+    def comments_per_channel(self) -> int:
+        """Comment threads to pull per channel per cycle."""
+        return int((_CHANNEL.get("comments") or {}).get("per_channel", 30))
+
+    # ─── Outlier scan (niche discovery beyond the fixed peer list) ────────────
+    @property
+    def outliers_enabled(self) -> bool:
+        return bool((_CHANNEL.get("outliers") or {}).get("enabled", True))
+
+    @property
+    def outlier_keywords(self) -> list[str]:
+        """Keywords to scan for breakout videos. Defaults to first 3 niche
+        topics, cleaned for search (parentheticals stripped, lowercased) —
+        niche labels are prose ('AI (local + cloud)'), search queries aren't."""
+        kws = (_CHANNEL.get("outliers") or {}).get("keywords")
+        if kws:
+            return list(kws)
+        import re as _re
+        cleaned = []
+        for t in self.brand_niche[:3]:
+            kw = _re.sub(r"\([^)]*\)", "", str(t)).strip().lower()
+            if kw:
+                cleaned.append(kw)
+        return cleaned
+
+    @property
+    def outliers_per_keyword(self) -> int:
+        return int((_CHANNEL.get("outliers") or {}).get("per_keyword", 8))
+
     def __post_init__(self) -> None:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.vectors_path.mkdir(parents=True, exist_ok=True)

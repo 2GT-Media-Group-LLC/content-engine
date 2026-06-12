@@ -72,6 +72,44 @@ class YouTubeProvider(Protocol):
         (e.g. Composio v3 doesn't expose vidiq's analytics endpoint)."""
         ...
 
+    def get_comments(self, *, channel: str | None = None,
+                     video_id: str | None = None, limit: int = 20) -> list[dict]:
+        """Top comment threads for a channel OR a single video. Each dict:
+        {text, author, likes, published_at, video_id}. [] when unsupported."""
+        ...
+
+    def get_transcript(self, video_id: str) -> str | None:
+        """Full transcript text for a video, or None when unavailable."""
+        ...
+
+    def find_outliers(self, *, keyword: str | None = None,
+                      channels: list[str] | None = None,
+                      published_within: str = "thisMonth",
+                      limit: int = 20) -> list[dict]:
+        """Overperforming videos in the niche (beyond the fixed peer list).
+        Each dict: {videoId, title, channelTitle, views, vph, outlier_score,
+        publishedAt}. [] when unsupported."""
+        ...
+
+    def keyword_research(self, keyword: str) -> dict | None:
+        """Search volume / competition / opportunity for a keyword.
+        {keyword, volume, competition, score, monthly_searches, related}.
+        None when unsupported."""
+        ...
+
+    def generate_titles(self, *, title: str, description: str | None = None,
+                        previous_titles: list[str] | None = None,
+                        n: int = 5) -> list[dict]:
+        """Provider-generated title candidates [{title, score}]. [] when
+        unsupported — callers keep the locally-generated titles."""
+        ...
+
+    def generate_thumbnail(self, *, title: str, description: str | None = None,
+                           direction: str | None = None,
+                           transcript: str | None = None) -> dict | None:
+        """Generate a thumbnail. Returns {url, score, feedback} or None."""
+        ...
+
 
 # ─── Noop fallback ────────────────────────────────────────────────────────────
 class NoopProvider:
@@ -98,6 +136,26 @@ class NoopProvider:
         return None
 
     def get_channel_analytics(self, channel_id, *, days=30):
+        return None
+
+    def get_comments(self, *, channel=None, video_id=None, limit=20):
+        return []
+
+    def get_transcript(self, video_id):
+        return None
+
+    def find_outliers(self, *, keyword=None, channels=None,
+                      published_within="thisMonth", limit=20):
+        return []
+
+    def keyword_research(self, keyword):
+        return None
+
+    def generate_titles(self, *, title, description=None, previous_titles=None, n=5):
+        return []
+
+    def generate_thumbnail(self, *, title, description=None, direction=None,
+                           transcript=None):
         return None
 
 

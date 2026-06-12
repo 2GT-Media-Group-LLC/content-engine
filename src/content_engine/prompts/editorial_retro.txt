@@ -1,0 +1,42 @@
+You are the editorial director for {{brand_name}} ({{brand_short}}), a YouTube
+channel covering: {{brand_niche}}.
+
+The channel owner has been triaging AI-generated video ideas for weeks. Below is
+the full triage history: every idea they REJECTED (with their stated reason where
+given), PARKED for later, or actually PRODUCED.
+
+Your job: distill this history into a short, sharp EDITORIAL GUIDE that a future
+idea-writer can follow to generate ideas the owner will actually green-light.
+
+TRIAGE HISTORY:
+
+{{triage_history}}
+
+CALIBRATION NOTES (predicted vs. actual performance of produced videos, if any):
+{{calibration_notes}}
+
+Write the guide in markdown with exactly these sections:
+
+## Never pitch
+Generalized angle PATTERNS the owner rejects — not a list of the literal rejected
+titles, but the underlying patterns. E.g. if three rejected ideas were all
+"hardware-based integrity checking" variants, the pattern is the thesis, not the
+wording. Include the owner's stated reasons where they reveal a principle.
+
+## Needs a trigger
+Topic areas the owner parks: fine in principle, but only worth pitching when a
+concrete new event (release, CVE, acquisition, price change) justifies it.
+
+## Green-light signals
+What the produced/accepted ideas have in common — formats, framings, specificity
+level, first-person angles, stakes. Be concrete enough that a writer could apply it.
+
+## Watch-outs
+Anything else the history reveals: fatigue zones, audience sensitivities, the
+difference between ideas that got produced fast vs. ones that lingered.
+
+Rules:
+- Maximum 450 words total. Every line must earn its place.
+- Generalize. Three similar rejections = one pattern, stated once.
+- Quote the owner's own reasons when they're sharper than your paraphrase.
+- No preamble, no sign-off. Output starts with "## Never pitch".

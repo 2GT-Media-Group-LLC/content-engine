@@ -388,12 +388,39 @@ engine gui [--port 8080]        launch the feedback UI
 engine eval [--agent NAME]      run golden test cases
 engine list-cycles              show recent pipeline runs
 engine list-ideas [--fate F]    browse generated ideas
-engine fate <idea_id> <fate>    mark an idea rejected | parked | produced
+engine fate <id> <fate>         mark an idea rejected | parked | produced
+                                (--video <yt_id> links the published video
+                                 for post-mortem calibration)
+engine retro [--force]          distill triage history → editorial guide
+engine post-mortem              grade predictions vs. reality for produced videos
+engine produce <idea_id>        build a production pack (outline, scored title
+                                board, transcripts, sources; --thumbnail adds
+                                an AI-generated thumbnail)
 engine polish <idea_id>         export an idea as markdown for manual polish
 engine extract-voice            re-extract voice guide from your scripts
-engine sync-performance         refresh own-channel performance snapshot via vidiq
+engine sync-performance         refresh own-channel perf snapshot (auto-tiers
+                                each video + distills what-works patterns)
 engine report <cycle_id>        re-render an existing cycle's HTML
+engine composio-disconnect      scrub legacy Composio credentials
 ```
+
+### The learning loop
+
+The engine improves from your triage decisions, autonomously:
+
+1. Every `engine fate … rejected --reason "…"` is recorded.
+2. At the start of each cycle, the **retro agent** distills all decided fates
+   into `style/editorial_guide.md` — generalized taste rules ("never pitch
+   commercial SaaS tools", "first-person infrastructure stories win"), not a
+   blocklist. Regenerated only when triage state changes.
+3. The guide is injected into every idea-generation prompt, and an
+   **editorial critic** (heavy tier, rubric-scored) gates each candidate —
+   one revision round for ideas that don't clear the bar.
+4. When you publish, `engine fate <id> produced --video <yt_id>` links the
+   video; `engine post-mortem` later grades the prediction against actual
+   views and writes `data/calibration.md`, which feeds the next retro.
+
+Prediction → production → reality → adjusted taste. All local, $0.
 
 ---
 

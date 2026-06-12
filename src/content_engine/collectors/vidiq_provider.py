@@ -241,6 +241,18 @@ class VidIQProvider:
         videos: list[VideoRecord] = self.list_channel_videos(
             channel_id, limit=20, recent=True,
         )
+        # The channel-videos call returns metadata only (no view counts), so
+        # batch-enrich here — one extra call per 50 videos. Without this the
+        # downstream tier assignment has nothing to grade against.
+        if videos:
+            enrichment = self.enrich_videos([v.videoId for v in videos])
+            for v in videos:
+                m = enrichment.get(v.videoId)
+                if m:
+                    v.views = m.get("views") if m.get("views") is not None else v.views
+                    v.likes = m.get("likes") if m.get("likes") is not None else v.likes
+                    v.comments = (m.get("comments")
+                                   if m.get("comments") is not None else v.comments)
         # Tier and per-video win/lose tags are assigned by the synthesizer
         # consumer; we just supply raw metrics.
 
@@ -259,6 +271,107 @@ class VidIQProvider:
             what_underperforms=[],
         )
         return snapshot
+
+    # ─── Comments (audience questions / pain points) ─────────────────────────
+    def get_comments(self, *, channel: str | None = None,
+                     video_id: str | None = None, limit: int = 20) -> list[dict]:
+        """Top comment threads. Channel mode browses recent comments across the
+        whole channel in ONE call (5 credits) — far cheaper than per-video."""
+        args: dict[str, Any] = {"maxResult": max(1, min(int(limit), 100)),
+                                 "order": "relevance"}
+        if video_id:
+            args["videoId"] = video_id
+        elif channel:
+            args["channelId"] = channel
+        else:
+            return []
+        try:
+            raw = self._client.call_tool("vidiq_video_comments", args)
+        except Exception as e:
+            log.warning("vidiq_video_comments(%s) failed: %s",
+                        video_id or channel, e)
+            return []
+        return _parse_comments(raw)
+
+    # ─── Transcript ──────────────────────────────────────────────────────────
+    def get_transcript(self, video_id: str) -> str | None:
+        try:
+            raw = self._client.call_tool("vidiq_video_transcript",
+                                          {"videoId": video_id})
+        except Exception as e:
+            log.debug("vidiq_video_transcript(%s) failed: %s", video_id, e)
+            return None
+        return _parse_transcript(raw)
+
+    # ─── Outlier scan (niche discovery beyond fixed peers) ───────────────────
+    def find_outliers(self, *, keyword: str | None = None,
+                      channels: list[str] | None = None,
+                      published_within: str = "thisMonth",
+                      limit: int = 20) -> list[dict]:
+        args: dict[str, Any] = {
+            "publishedWithin": published_within,
+            "limit": max(1, min(int(limit), 100)),
+            "contentType": "long",
+            "sort": "score",
+        }
+        if keyword:
+            args["keyword"] = keyword
+        if channels:
+            args["channelIds"] = channels
+        if not keyword and not channels:
+            return []
+        try:
+            raw = self._client.call_tool("vidiq_outliers", args)
+        except Exception as e:
+            log.warning("vidiq_outliers(%s) failed: %s", keyword or channels, e)
+            return []
+        return _parse_outliers(raw)
+
+    # ─── Keyword research ────────────────────────────────────────────────────
+    def keyword_research(self, keyword: str) -> dict | None:
+        try:
+            raw = self._client.call_tool("vidiq_keyword_research",
+                                          {"keyword": keyword,
+                                           "includeRelated": True})
+        except Exception as e:
+            log.debug("vidiq_keyword_research(%r) failed: %s", keyword, e)
+            return None
+        return _parse_keyword(raw, keyword)
+
+    # ─── Title generation (production pack) ──────────────────────────────────
+    def generate_titles(self, *, title: str, description: str | None = None,
+                        previous_titles: list[str] | None = None,
+                        n: int = 5) -> list[dict]:
+        args: dict[str, Any] = {"title": title[:500], "type": "long",
+                                 "numTitles": max(1, min(int(n), 10))}
+        if description:
+            args["description"] = description[:5000]
+        if previous_titles:
+            args["previousTitles"] = [t[:200] for t in previous_titles[:20]]
+        try:
+            raw = self._client.call_tool("vidiq_generate_titles", args)
+        except Exception as e:
+            log.warning("vidiq_generate_titles failed: %s", e)
+            return []
+        return _parse_generated_titles(raw)
+
+    # ─── Thumbnail generation (production pack; 22 credits/call) ─────────────
+    def generate_thumbnail(self, *, title: str, description: str | None = None,
+                           direction: str | None = None,
+                           transcript: str | None = None) -> dict | None:
+        args: dict[str, Any] = {"title": title[:500]}
+        if description:
+            args["description"] = description[:5000]
+        if direction:
+            args["userQuery"] = direction[:2000]
+        if transcript:
+            args["transcript"] = transcript[:20000]
+        try:
+            raw = self._client.call_tool("vidiq_generate_thumbnail", args)
+        except Exception as e:
+            log.warning("vidiq_generate_thumbnail failed: %s", e)
+            return None
+        return _parse_thumbnail(raw)
 
     # ─── Private helpers ─────────────────────────────────────────────────────
     def _is_authorized(self, channel_id: str) -> bool:
@@ -446,6 +559,167 @@ def _extract_channel_ids(raw: Any) -> set[str]:
             if isinstance(v, str) and v:
                 out.add(v)
     return out
+
+
+def _parse_comments(raw: Any) -> list[dict]:
+    """Normalize vidiq_video_comments output → [{text, author, likes,
+    published_at, video_id}]. Flattens top-level threads; ignores replies
+    (the top comment carries the question/pain-point signal)."""
+    if not isinstance(raw, (dict, list)):
+        return []
+    items = raw if isinstance(raw, list) else None
+    if items is None:
+        for key in ("comments", "threads", "items", "data", "results"):
+            v = raw.get(key)
+            if isinstance(v, list):
+                items = v
+                break
+    if not items:
+        return []
+    out: list[dict] = []
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        # Thread shape may nest the top comment under topComment (vidiq),
+        # topLevelComment/snippet (YouTube API), or be flat.
+        c = (it.get("topComment") or it.get("topLevelComment")
+             or it.get("comment") or it)
+        snip = c.get("snippet") if isinstance(c.get("snippet"), dict) else c
+        text = (snip.get("textOriginal") or snip.get("textDisplay")
+                or snip.get("text") or "")
+        if not isinstance(text, str) or not text.strip():
+            continue
+        out.append({
+            "text": text.strip()[:2000],
+            "author": (snip.get("authorDisplayName") or snip.get("author") or ""),
+            "likes": _coerce_int(snip.get("likeCount") or snip.get("likes")) or 0,
+            "published_at": (snip.get("publishedAt") or snip.get("published")
+                              or it.get("publishedAt")),
+            "video_id": (snip.get("videoId") or it.get("videoId") or ""),
+        })
+    return out
+
+
+def _parse_transcript(raw: Any) -> str | None:
+    """Extract plain transcript text from vidiq_video_transcript output."""
+    if isinstance(raw, str):
+        return raw.strip() or None
+    if not isinstance(raw, dict):
+        return None
+    for key in ("transcript", "text", "captions", "content"):
+        v = raw.get(key)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+        if isinstance(v, list):
+            # Segment list: [{text, start}, ...] — join the text fields.
+            parts = [s.get("text", "") if isinstance(s, dict) else str(s)
+                     for s in v]
+            joined = " ".join(p for p in parts if p).strip()
+            if joined:
+                return joined
+    return None
+
+
+def _parse_outliers(raw: Any) -> list[dict]:
+    """Normalize vidiq_outliers output → flat video dicts."""
+    items = _extract_video_list(raw)
+    out: list[dict] = []
+    for v in items:
+        if not isinstance(v, dict):
+            continue
+        vid = v.get("videoId") or v.get("id")
+        if not isinstance(vid, str) or not vid:
+            continue
+        out.append({
+            "videoId": vid,
+            "title": v.get("title") or "",
+            "channelTitle": v.get("channelTitle") or v.get("channel") or "",
+            "channelId": v.get("channelId") or "",
+            "views": _coerce_int(v.get("viewCount") or v.get("views")),
+            "vph": _coerce_float(v.get("vph")),
+            "outlier_score": _coerce_float(
+                v.get("breakoutScore") or v.get("outlierScore") or v.get("score")),
+            "publishedAt": v.get("publishedAt") or v.get("published"),
+        })
+    return out
+
+
+def _parse_keyword(raw: Any, keyword: str) -> dict | None:
+    """Normalize vidiq_keyword_research output. Live response shape:
+    {seedKeyword: {keyword, volume, competition, overall,
+                   estimatedMonthlySearch}, relatedKeywords: [...]}"""
+    if not isinstance(raw, dict):
+        return None
+    # Metrics live under seedKeyword in research mode; fall back to other
+    # nestings / top-level for older shapes.
+    rec = raw
+    for key in ("seedKeyword", "keyword", "data", "result", "metrics"):
+        v = raw.get(key)
+        if isinstance(v, dict):
+            rec = v
+            break
+    related = []
+    rel = (raw.get("relatedKeywords") or raw.get("related")
+           or rec.get("related") or [])
+    if isinstance(rel, list):
+        for r in rel[:8]:
+            if isinstance(r, dict) and r.get("keyword"):
+                related.append({
+                    "keyword": r["keyword"],
+                    "score": _coerce_float(r.get("overall") or r.get("score")),
+                    "monthly_searches": _coerce_int(r.get("estimatedMonthlySearch")),
+                })
+            elif isinstance(r, str):
+                related.append({"keyword": r, "score": None})
+    return {
+        "keyword": keyword,
+        "volume": _coerce_float(rec.get("volume") or rec.get("searchVolume")),
+        "competition": _coerce_float(rec.get("competition")),
+        "score": _coerce_float(rec.get("overall") or rec.get("score")
+                                or rec.get("overallScore")),
+        "monthly_searches": _coerce_int(
+            rec.get("estimatedMonthlySearch") or rec.get("monthlySearches")),
+        "related": related,
+    }
+
+
+def _parse_generated_titles(raw: Any) -> list[dict]:
+    """Normalize vidiq_generate_titles output → [{title, score}]."""
+    if not isinstance(raw, (dict, list)):
+        return []
+    items = raw if isinstance(raw, list) else None
+    if items is None:
+        for key in ("titles", "suggestions", "items", "data", "results"):
+            v = raw.get(key)
+            if isinstance(v, list):
+                items = v
+                break
+    if not items:
+        return []
+    out: list[dict] = []
+    for it in items:
+        if isinstance(it, str):
+            out.append({"title": it, "score": None})
+        elif isinstance(it, dict):
+            t = it.get("title") or it.get("text")
+            if isinstance(t, str) and t.strip():
+                out.append({"title": t.strip(),
+                             "score": _coerce_float(it.get("score"))})
+    return out
+
+
+def _parse_thumbnail(raw: Any) -> dict | None:
+    """Normalize vidiq_generate_thumbnail output → {url, score, feedback}."""
+    if not isinstance(raw, dict):
+        return None
+    url = (raw.get("url") or raw.get("thumbnailUrl") or raw.get("imageUrl")
+           or (raw.get("thumbnail") or {}).get("url")
+           if isinstance(raw.get("thumbnail"), dict) else raw.get("url"))
+    score = _coerce_float(raw.get("score") or raw.get("selfScore"))
+    feedback = raw.get("feedback")
+    if not url:
+        return None
+    return {"url": url, "score": score, "feedback": feedback}
 
 
 def _load_cached_authorized() -> set[str] | None:

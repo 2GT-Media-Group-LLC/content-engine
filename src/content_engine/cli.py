@@ -90,18 +90,27 @@ def run(top_clusters: int = 5, cluster_distance: float = 0.32, notes: str = ""):
 
 
 @app.command()
-def fate(idea_id: str, status: str, reason: str = ""):
+def fate(idea_id: str, status: str, reason: str = "",
+         video: str = typer.Option("", "--video",
+                                    help="YouTube video ID (for produced ideas — "
+                                         "enables post-mortem calibration)")):
     """Mark an idea's fate: rejected | parked | produced."""
     if status not in {"rejected", "parked", "produced"}:
         raise typer.BadParameter("status must be one of: rejected, parked, produced")
     with get_conn() as conn:
         cur = conn.execute(
-            "UPDATE ideas SET fate=?, fate_reason=?, fate_set_at=? WHERE idea_id=?",
-            (status, reason or None, datetime.utcnow().isoformat(), idea_id),
+            """UPDATE ideas SET fate=?, fate_reason=?, fate_set_at=?,
+               produced_video_id=COALESCE(NULLIF(?, ''), produced_video_id)
+               WHERE idea_id=?""",
+            (status, reason or None, datetime.utcnow().isoformat(),
+             video, idea_id),
         )
     if cur.rowcount == 0:
         raise typer.BadParameter(f"unknown idea_id: {idea_id}")
-    console.print(f"[green]marked[/green] {idea_id} → {status}")
+    msg = f"[green]marked[/green] {idea_id} → {status}"
+    if video:
+        msg += f" (video {video} — run [bold]engine post-mortem[/bold] in ~30 days)"
+    console.print(msg)
 
 
 @app.command()
@@ -132,24 +141,30 @@ def collect(
     Sources:
       - reddit: direct public JSON (no auth)
       - youtube: via active provider (vidiq by default, composio as fallback)
+      - outliers: breakout niche videos beyond the peer list (vidiq)
+      - youtube_comments: audience questions mined from comments (vidiq)
       - blog: RSS/Atom feeds in data/feeds.yaml
       - hackernews: Algolia HN search (no auth)
       - github: GitHub releases in data/github_repos.yaml (unauth, 60/hr)
     """
-    from .collectors import reddit, youtube, feeds, hackernews, github_releases
+    from .collectors import (reddit, youtube, feeds, hackernews,
+                              github_releases, comments, outliers)
     yt_kwargs = {"force_provider": provider} if provider else {}
     results = []
     results.append(reddit.collect())
     results.append(youtube.collect(**yt_kwargs))
+    results.append(outliers.collect(**yt_kwargs))
+    results.append(comments.collect(**yt_kwargs))
     results.append(feeds.collect())
     results.append(hackernews.collect())
     results.append(github_releases.collect())
     t = Table(title="Collection summary", show_header=True, header_style="bold magenta")
-    t.add_column("Platform"); t.add_column("Provider"); t.add_column("Ingested"); t.add_column("Errors")
+    t.add_column("Source"); t.add_column("Provider"); t.add_column("Ingested"); t.add_column("Errors")
     for r in results:
         err = r.get("errors") or []
         err_str = ("; ".join(err)[:100] + ("…" if len(err) > 2 else "")) if err else "-"
-        t.add_row(r["platform"], r.get("provider", "-"), str(r["ingested"]), err_str)
+        label = r.get("collector") or r["platform"]
+        t.add_row(label, r.get("provider", "-"), str(r["ingested"]), err_str)
     console.print(t)
 
 
@@ -186,10 +201,82 @@ def sync_performance(
                        f"manually or switch to YOUTUBE_PROVIDER=vidiq.")
         raise typer.Exit(code=1)
 
+    # Tier each video (deterministic) + distill what_works narratives (local LLM)
+    # so the idea synthesizer reads a fully-populated snapshot.
+    from .synthesizers.perf_insights import assign_tiers, fill_narratives
+    assign_tiers(snapshot)
+    fill_narratives(snapshot)
+
     out_path = settings.db_path.parent / f"{settings.brand_short.lower()}_perf_30d.json"
     out_path.write_text(_json.dumps(snapshot.model_dump(exclude_none=False), indent=2))
+    tiers = {}
+    for v in snapshot.videos:
+        if v.tier:
+            tiers[v.tier] = tiers.get(v.tier, 0) + 1
     console.print(f"[green]synced[/green] {settings.brand_name} performance snapshot "
-                   f"→ {out_path.name} ({len(snapshot.videos)} videos)")
+                   f"→ {out_path.name} ({len(snapshot.videos)} videos, tiers: {tiers})")
+    if snapshot.what_works:
+        console.print("[dim]what's working:[/dim]")
+        for w in snapshot.what_works:
+            console.print(f"  [green]+[/green] {w}")
+
+
+@app.command()
+def retro(force: bool = typer.Option(False, "--force",
+                                      help="Regenerate even if triage state unchanged")):
+    """Distill triage history (fates + reasons) into style/editorial_guide.md.
+
+    The guide is injected into every idea-generation prompt — the engine's
+    living memory of what you green-light, park, and reject. Runs
+    automatically at the start of each pipeline cycle; this command forces
+    a refresh on demand."""
+    from .synthesizers.retro import maybe_refresh
+    result = maybe_refresh(force=force)
+    if result.get("refreshed"):
+        console.print(f"[green]refreshed[/green] editorial guide from "
+                       f"{result['n_decided']} decided ideas → {result['path']}")
+    else:
+        console.print(f"[dim]not refreshed:[/dim] "
+                       f"{result.get('reason') or result.get('error') or 'already current'}")
+
+
+@app.command(name="post-mortem")
+def post_mortem():
+    """Compare predictions vs. reality for produced videos.
+
+    For every idea marked produced with a --video ID: fetches current stats,
+    grades the prediction (breakout → flopped vs. channel median), updates
+    video_performance, and writes data/calibration.md — which feeds back
+    into the editorial guide on the next retro."""
+    from .synthesizers.postmortem import run_postmortem
+    result = run_postmortem()
+    if not result.get("checked"):
+        console.print("[yellow]no produced ideas with linked videos[/yellow] — "
+                       "link one: engine fate <idea_id> produced --video <yt_id>")
+    else:
+        console.print(f"[green]graded[/green] {result['checked']} video(s): "
+                       f"{result.get('grades', {})}")
+        console.print(f"[dim]→ {result['path']}[/dim]")
+
+
+@app.command()
+def produce(idea_id: str,
+            thumbnail: bool = typer.Option(False, "--thumbnail",
+                                            help="Also generate an AI thumbnail "
+                                                 "(22 vidiq credits)")):
+    """Build a production pack for a green-lit idea.
+
+    Gathers outline, verified sources, transcripts of the top related videos,
+    a scored title board (provider-generated + engine suggestions), and
+    optionally a generated thumbnail — one markdown handoff doc, ready for
+    scripting."""
+    from .synthesizers.producer import build_production_pack
+    try:
+        path = build_production_pack(idea_id, thumbnail=thumbnail)
+    except ValueError as e:
+        raise typer.BadParameter(str(e))
+    console.print(f"[bold green]production pack ready[/bold green] → {path}")
+    console.print(f"[dim]open: file://{path}[/dim]")
 
 
 @app.command(name="composio-disconnect")
