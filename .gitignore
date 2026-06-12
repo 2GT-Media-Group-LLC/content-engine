@@ -31,3 +31,8 @@ reports/*.pdf
 # Private working/continuation notes (not for public repo)
 CONTINUE.md
 docs/SESSION_*_SETUP.md
+
+# Learning-loop artifacts — personal taste data, regenerated from the DB
+style/editorial_guide.md
+data/calibration.md
+reports/production/
