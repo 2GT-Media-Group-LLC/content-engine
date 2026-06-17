@@ -105,6 +105,18 @@ def run_processing_only(cycle_id: str, *, top_clusters: int = 5,
     """Skip collection (assumes signals already in DB). Useful while iterating."""
     timings: dict[str, float] = {}
 
+    # Pre-flight: a missing routed model used to surface mid-cluster as a slow
+    # 10-min watchdog kill (every cluster_label 404'd on the absent fast tier).
+    # Catch it here in ~1s with a copy-pasteable fix, and mark the cycle failed
+    # cleanly instead of force-exiting later.
+    from .ollama_client import ensure_tiers_available, OllamaError
+    try:
+        ensure_tiers_available()
+    except OllamaError as e:
+        log.error("pre-flight check failed — aborting cycle %s:\n%s", cycle_id, e)
+        finish_cycle(cycle_id, f"failed: {str(e).splitlines()[0]}")
+        raise
+
     with _stage("retro", cycle_id, timings):
         log.info("[%s] refreshing editorial guide from triage history…", cycle_id)
         retro = refresh_editorial_guide(cycle_id)

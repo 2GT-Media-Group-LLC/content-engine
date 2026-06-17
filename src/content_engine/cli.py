@@ -13,7 +13,6 @@ from rich.table import Table
 from .collectors.base import ingest_signals, signals_from_reddit_listing, signals_from_youtube_videos
 from .config import settings
 from .db import get_conn, init_db
-from .ollama_client import list_local_models
 from .pipeline import finish_cycle, new_cycle, run_processing_only
 from .reports.render import render_weekly
 
@@ -25,20 +24,32 @@ console = Console()
 @app.command()
 def init():
     """Initialize the SQLite DB and confirm Ollama tiers are pulled."""
+    from .ollama_client import check_tiers, OllamaError
     init_db()
-    local = set(list_local_models())
     table = Table(title="Routing config", show_header=True, header_style="bold magenta")
     table.add_column("Tier"); table.add_column("Model"); table.add_column("Pulled?"); table.add_column("Purpose")
-    for tier in (settings.fast, settings.mid, settings.heavy, settings.polish, settings.embed):
-        ok = any(tier.ollama_tag in m or m.startswith(tier.ollama_tag) for m in local)
+    try:
+        tiers = check_tiers()
+    except OllamaError as e:
+        console.print(f"[red]✗ {e}[/red]")
+        raise typer.Exit(code=2)
+    missing = []
+    # check_tiers() de-dupes by tag; map back to a row per (tag, present).
+    for tier, ok in tiers:
         table.add_row(
             tier.name, tier.ollama_tag,
             "[green]✓[/green]" if ok else "[red]missing[/red]",
             tier.purpose,
         )
+        if not ok:
+            missing.append(tier.ollama_tag)
     console.print(table)
     console.print(f"[dim]DB: {settings.db_path}[/dim]")
     console.print(f"[dim]Reports: {settings.reports_dir}[/dim]")
+    if missing:
+        console.print("\n[bold red]Missing models — pull before running:[/bold red]")
+        for tag in missing:
+            console.print(f"  ollama pull {tag}")
 
 
 @app.command(name="ingest-youtube-json")
@@ -80,8 +91,14 @@ def ingest_reddit_json(path: Path):
 @app.command()
 def run(top_clusters: int = 5, cluster_distance: float = 0.32, notes: str = ""):
     """Run the processing pipeline (assumes signals already collected)."""
+    from .ollama_client import OllamaError
     cid = new_cycle(notes=notes or None)
-    result = run_processing_only(cid, top_clusters=top_clusters, cluster_distance=cluster_distance)
+    try:
+        result = run_processing_only(cid, top_clusters=top_clusters, cluster_distance=cluster_distance)
+    except OllamaError as e:
+        # Pre-flight already marked the cycle failed + logged the fix.
+        console.print(f"[bold red]✗ pre-flight check failed[/bold red]\n{e}")
+        raise typer.Exit(code=2)
     table = Table(title=f"Cycle {cid}", show_header=False)
     for k, v in result.items():
         table.add_row(str(k), str(v))

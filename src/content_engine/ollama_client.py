@@ -217,3 +217,54 @@ def list_local_models() -> list[str]:
         r = client.get(f"{settings.ollama_host}/api/tags")
         r.raise_for_status()
         return [m["name"] for m in r.json().get("models", [])]
+
+
+# ─── Tier readiness ───────────────────────────────────────────────────────────
+def _required_tiers() -> list[ModelTier]:
+    """Distinct model tiers the pipeline routes to, de-duped by tag (polish is
+    an alias of heavy), in a sensible display order."""
+    seen: set[str] = set()
+    out: list[ModelTier] = []
+    for t in (settings.embed, settings.fast, settings.mid, settings.heavy, settings.polish):
+        if t.ollama_tag not in seen:
+            seen.add(t.ollama_tag)
+            out.append(t)
+    return out
+
+
+def check_tiers() -> list[tuple[ModelTier, bool]]:
+    """Return [(tier, is_present), ...] for every routed model. Raises
+    OllamaError if Ollama itself is unreachable (a distinct, actionable
+    failure from 'a model is missing')."""
+    try:
+        local = set(list_local_models())
+    except (httpx.HTTPError, OSError) as e:
+        raise OllamaError(
+            f"could not reach Ollama at {settings.ollama_host}: {e}"
+        ) from e
+    out: list[tuple[ModelTier, bool]] = []
+    for t in _required_tiers():
+        present = any(t.ollama_tag in m or m.startswith(t.ollama_tag) for m in local)
+        out.append((t, present))
+    return out
+
+
+def missing_tiers() -> list[ModelTier]:
+    """Routed models not currently pulled in Ollama. Empty list = all good."""
+    return [t for t, ok in check_tiers() if not ok]
+
+
+def ensure_tiers_available() -> None:
+    """Pre-flight gate. Raises OllamaError with copy-pasteable `ollama pull`
+    lines if any routed model is missing. Cheap (one /api/tags call) — call it
+    before a long pipeline run so a missing model fails in ~1s instead of
+    surfacing mid-cluster as a slow watchdog kill."""
+    missing = missing_tiers()
+    if not missing:
+        return
+    tags = ", ".join(t.ollama_tag for t in missing)
+    pulls = "\n".join(f"  ollama pull {t.ollama_tag}" for t in missing)
+    raise OllamaError(
+        f"{len(missing)} routed model(s) missing from Ollama: {tags}\n"
+        f"Pull them, then re-run:\n{pulls}"
+    )

@@ -10,6 +10,8 @@ Routes:
   GET  /run/status         JSON: running state, current cycle, log tail
   GET  /run/status/fragment HTMX fragment for live polling banner
   GET  /performance   own-channel video performance + idea→video traceback
+  GET  /logs          browse + tail run/agent logs in data/runs
+  GET  /logs/raw      plain-text tail (auto-refresh poll target)
   GET  /health        container health probe
 
 Reads the same SQLite DB the engine writes to. Triggered runs fork a
@@ -453,6 +455,88 @@ def idea_detail(request: Request, idea_id: str):
         request, "idea.html",
         {"idea": idea, "brand": settings.brand_name},
     )
+
+
+# ─── logs ────────────────────────────────────────────────────────────────────
+def _list_logs() -> list[dict]:
+    """Run/agent log files in data/runs, newest first, with size + mtime."""
+    out = []
+    for p in _RUNS_DIR.glob("*.log"):
+        try:
+            st = p.stat()
+        except OSError:
+            continue
+        out.append({
+            "name": p.name,
+            "size_kb": round(st.st_size / 1024, 1),
+            "mtime": datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M"),
+            "mtime_ts": st.st_mtime,
+        })
+    out.sort(key=lambda r: r["mtime_ts"], reverse=True)
+    return out
+
+
+def _safe_log_path(name: str) -> Path | None:
+    """Resolve a requested log name to a real file inside _RUNS_DIR, or None.
+    Guards against path traversal: basename only, must stay within _RUNS_DIR,
+    must be a .log file that exists."""
+    if not name or "/" in name or "\\" in name or not name.endswith(".log"):
+        return None
+    candidate = (_RUNS_DIR / name).resolve()
+    try:
+        candidate.relative_to(_RUNS_DIR.resolve())
+    except ValueError:
+        return None
+    return candidate if candidate.is_file() else None
+
+
+def _tail(path: Path, lines: int) -> str:
+    """Last `lines` lines of a file, reading only the tail bytes for big logs
+    (gui.out.log can be many MB)."""
+    try:
+        size = path.stat().st_size
+        # ~400 bytes/line heuristic, capped at 2MB read.
+        read_bytes = min(size, max(64_000, lines * 400), 2_000_000)
+        with open(path, "rb") as f:
+            if size > read_bytes:
+                f.seek(size - read_bytes)
+                f.readline()  # discard partial first line
+            data = f.read()
+        text = data.decode("utf-8", errors="replace")
+        return "\n".join(text.splitlines()[-lines:])
+    except OSError as e:
+        return f"(could not read log: {e})"
+
+
+@app.get("/logs", response_class=HTMLResponse)
+def logs_view(request: Request, file: str = "", lines: int = 300):
+    files = _list_logs()
+    lines = max(50, min(lines, 5000))
+    selected = file or (files[0]["name"] if files else "")
+    content = ""
+    error = ""
+    if selected:
+        path = _safe_log_path(selected)
+        if path is None:
+            error = f"log not found: {selected}"
+            selected = ""
+        else:
+            content = _tail(path, lines)
+    return templates.TemplateResponse(
+        request, "logs.html",
+        {"files": files, "selected": selected, "content": content,
+         "lines": lines, "error": error, "brand": settings.brand_name},
+    )
+
+
+@app.get("/logs/raw")
+def logs_raw(file: str, lines: int = 300):
+    """Plain-text tail — used by the auto-refresh poll on the logs page."""
+    path = _safe_log_path(file)
+    if path is None:
+        raise HTTPException(404, f"log not found: {file}")
+    lines = max(50, min(lines, 5000))
+    return HTMLResponse(_tail(path, lines), media_type="text/plain")
 
 
 @app.get("/performance", response_class=HTMLResponse)

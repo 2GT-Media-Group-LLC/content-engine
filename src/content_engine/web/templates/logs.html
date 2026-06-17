@@ -1,0 +1,94 @@
+{% extends "layout.html" %}
+{% block title %}Logs · {{ brand }} Engine{% endblock %}
+{% block content %}
+
+<header class="mb-8">
+  <div class="text-xs tracking-[0.3em] text-white/40 uppercase">Logs</div>
+  <h1 class="text-2xl font-semibold mt-1">Run &amp; agent logs</h1>
+  <p class="text-sm text-white/50 mt-1">Tailing <span class="font-mono">data/runs/</span> — newest first.</p>
+</header>
+
+{% if error %}
+<div class="card rounded-2xl p-4 mb-6 text-sm text-rose-300 border border-rose-500/30">{{ error }}</div>
+{% endif %}
+
+<div class="grid md:grid-cols-[260px_1fr] gap-6">
+
+  <!-- file list -->
+  <aside class="card rounded-2xl p-3 h-fit max-h-[70vh] overflow-y-auto">
+    {% if files %}
+    <ul class="space-y-1 text-sm">
+      {% for f in files %}
+      <li>
+        <a href="/logs?file={{ f.name }}&lines={{ lines }}"
+           class="block rounded-lg px-3 py-2 transition
+                  {% if f.name == selected %}bg-white/10 text-white{% else %}text-white/70 hover:bg-white/5{% endif %}">
+          <div class="font-mono text-[13px] truncate">{{ f.name }}</div>
+          <div class="text-[11px] text-white/40 mt-0.5">{{ f.mtime }} · {{ f.size_kb }} KB</div>
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div class="text-sm text-white/40 px-3 py-2">No logs yet.</div>
+    {% endif %}
+  </aside>
+
+  <!-- viewer -->
+  <section class="card rounded-2xl p-0 overflow-hidden flex flex-col min-h-[60vh]">
+    {% if selected %}
+    <div class="flex items-center justify-between gap-3 px-5 py-3 border-b border-white/5">
+      <div class="font-mono text-sm text-white/85 truncate">{{ selected }}</div>
+      <div class="flex items-center gap-3 text-xs text-white/50 shrink-0">
+        <span>last {{ lines }} lines</span>
+        <span class="flex gap-1.5">
+          {% for n in [100, 300, 1000, 5000] %}
+          <a href="/logs?file={{ selected }}&lines={{ n }}"
+             class="px-2 py-0.5 rounded {% if n == lines %}bg-white/15 text-white{% else %}hover:bg-white/10{% endif %}">{{ n }}</a>
+          {% endfor %}
+        </span>
+        <label class="flex items-center gap-1.5 cursor-pointer select-none">
+          <input type="checkbox" id="autorefresh" class="accent-emerald-400"> auto
+        </label>
+        <a href="/logs/raw?file={{ selected }}&lines={{ lines }}" target="_blank"
+           class="px-2 py-0.5 rounded hover:bg-white/10">raw ↗</a>
+      </div>
+    </div>
+    <pre id="logbody" class="flex-1 overflow-auto m-0 p-5 text-[12px] leading-relaxed font-mono text-white/80 whitespace-pre-wrap break-words">{{ content }}</pre>
+    {% else %}
+    <div class="flex-1 grid place-items-center text-white/40 text-sm">Select a log on the left.</div>
+    {% endif %}
+  </section>
+</div>
+
+{% if selected %}
+<script>
+(function () {
+  const body = document.getElementById("logbody");
+  const toggle = document.getElementById("autorefresh");
+  const file = {{ selected | tojson }};
+  const lines = {{ lines }};
+  let timer = null;
+
+  // Start scrolled to the newest output.
+  body.scrollTop = body.scrollHeight;
+
+  async function refresh() {
+    try {
+      const r = await fetch(`/logs/raw?file=${encodeURIComponent(file)}&lines=${lines}`);
+      if (!r.ok) return;
+      const atBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 40;
+      body.textContent = await r.text();
+      if (atBottom) body.scrollTop = body.scrollHeight;
+    } catch (e) { /* transient — keep last content */ }
+  }
+
+  toggle.addEventListener("change", () => {
+    if (toggle.checked) { refresh(); timer = setInterval(refresh, 3000); }
+    else if (timer) { clearInterval(timer); timer = null; }
+  });
+})();
+</script>
+{% endif %}
+
+{% endblock %}
