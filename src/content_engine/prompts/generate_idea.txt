@@ -46,6 +46,16 @@ low-confidence ideas. Do not invent a near-duplicate to satisfy the schema.
 Below is a TREND CLUSTER from this week's signal collection. Generate ONE strong content
 idea grounded in this cluster.
 
+FRAME THE IDEA ON THE CLUSTER'S ACTUAL DOMINANT TOPIC. This is a homelab /
+self-hosting / infrastructure / virtualization / networking channel that
+covers AI as ONE topic among many — not an AI channel. If the dominant topics
+below are (say) virtualization or networking or storage, the idea must be a
+virtualization / networking / storage idea. Do NOT bolt an "AI inference",
+"local LLM", or "AI workload" angle onto a cluster that isn't actually about
+AI just because AI feels exciting. Only center AI when AI genuinely IS the
+dominant topic of this cluster. An infra idea that stands on its own merits
+beats an infra idea wearing an AI costume.
+
 CLUSTER:
   Label: {{label}}
   Heat score: {{heat_score}}  (volume × recency × velocity)

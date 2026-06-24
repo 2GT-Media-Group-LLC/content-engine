@@ -1,8 +1,7 @@
 """Idea generator: takes labeled clusters + channel context → IdeaCandidate(s).
 
 Uses the heaviest local tier by default since synthesis quality matters more
-than throughput here. Escalates to fail-open (None) if even heavy can't
-produce valid JSON.
+than throughput here. Escalates to fail-open (None) if even heavy can't produce valid JSON.
 """
 from __future__ import annotations
 
@@ -10,6 +9,29 @@ import hashlib
 import json
 import logging
 from datetime import datetime, timedelta
+
+# Topic tags the engine treats as "AI" for the content-mix cap. The "ai" pillar
+# in channel.yaml covers both.
+_AI_TOPICS = {"ai-local", "ai-cloud"}
+
+
+def _pillar_of(topic: str) -> str:
+    """Map a raw topic tag to its content_mix pillar name."""
+    return "ai" if topic in _AI_TOPICS else (topic or "other")
+
+
+# A cluster counts as "AI-centric" if its primary tag is AI OR this fraction of
+# its member signals carry an AI tag anywhere in their topics. Catches the
+# common case of an AI-heavy cluster that gets a non-AI *primary* tag because
+# the homelab/virtualization "setting" tag outnumbers the AI "subject" tag.
+_AI_FRACTION_THRESHOLD = 0.4
+
+
+def _is_ai_centric(row: dict) -> bool:
+    topics = json.loads(row["dominant_topics_json"]) or []
+    if topics and topics[0] in _AI_TOPICS:
+        return True
+    return float(row.get("_ai_fraction", 0.0)) >= _AI_FRACTION_THRESHOLD
 
 from ..config import settings
 from ..db import get_conn
@@ -260,10 +282,20 @@ def _is_too_similar_to_rejected(angle: str,
 
 def _select_diverse_clusters(rows: list, top_n: int, max_per_topic: int = 2,
                               rejected_sets: list[frozenset[int]] | None = None,
-                              overlap_threshold: float = 0.5) -> tuple[list, list]:
-    """Pick top_n clusters with topic diversity AND no heavy overlap with
-    previously-rejected ideas. Returns (selected, skipped_for_overlap)."""
+                              overlap_threshold: float = 0.5,
+                              pillars: dict[str, float] | None = None,
+                              max_ai: int = -1) -> tuple[list, list]:
+    """Pick top_n clusters honoring: (1) no heavy overlap with rejected ideas,
+    (2) per-topic diversity, (3) the channel's content_mix pillar weights
+    (homelab-heavy channels surface homelab first), and (4) a hard cap on
+    AI-centric clusters so AI's structural novelty advantage can't dominate.
+
+    Selection order within each round is pillar_weight × heat, so a high-weight
+    pillar outranks a slightly-hotter low-weight one. Unlisted topics default
+    to weight 1.0 (well below typical pillar weights), keeping off-brand topics
+    out unless they're genuinely hot."""
     rejected_sets = rejected_sets or []
+    pillars = pillars or {}
     by_topic: dict[str, list] = {}
     skipped_for_overlap: list[dict] = []
 
@@ -281,23 +313,43 @@ def _select_diverse_clusters(rows: list, top_n: int, max_per_topic: int = 2,
     for buck in by_topic.values():
         buck.sort(key=lambda r: r["heat_score"], reverse=True)
 
+    def weight(topic: str) -> float:
+        return pillars.get(_pillar_of(topic), 1.0) if pillars else 1.0
+
     selected: list = []
     counts: dict[str, int] = {}
+    ai_selected = 0
     while len(selected) < top_n:
         progress = False
-        for topic, buck in sorted(by_topic.items(),
-                                  key=lambda kv: -kv[1][0]["heat_score"] if kv[1] else 0):
-            if counts.get(topic, 0) >= max_per_topic or not buck:
+        # Re-rank each round by pillar_weight × current-top heat.
+        ordered = sorted(
+            by_topic.items(),
+            key=lambda kv: (weight(kv[0]) * kv[1][0]["heat_score"]) if kv[1] else -1.0,
+            reverse=True,
+        )
+        for topic, buck in ordered:
+            if not buck or counts.get(topic, 0) >= max_per_topic:
                 continue
+            is_ai = _is_ai_centric(buck[0])
+            if is_ai and max_ai >= 0 and ai_selected >= max_ai:
+                continue  # AI cap reached — skip remaining AI-centric clusters
             selected.append(buck.pop(0))
             counts[topic] = counts.get(topic, 0) + 1
+            if is_ai:
+                ai_selected += 1
             progress = True
             if len(selected) >= top_n:
                 break
         if not progress:
             break
 
-    selected.sort(key=lambda r: r["heat_score"], reverse=True)
+    # Lead the brief with the highest pillar-weighted heat.
+    selected.sort(
+        key=lambda r: weight(
+            (json.loads(r["dominant_topics_json"]) or ["other"])[0]
+        ) * r["heat_score"],
+        reverse=True,
+    )
     return selected[:top_n], skipped_for_overlap
 
 
@@ -314,11 +366,26 @@ def generate_for_clusters(cycle_id: str, top_n: int = 5,
     regurgitated a previously-rejected angle) or by generation failure
     don't reduce yield below the target."""
     with get_conn() as conn:
-        all_rows = conn.execute(
+        all_rows = [dict(r) for r in conn.execute(
             """SELECT * FROM clusters WHERE cycle_id = ?
                ORDER BY heat_score DESC""",
             (cycle_id,),
-        ).fetchall()
+        ).fetchall()]
+        # Annotate each cluster with the fraction of its member signals that
+        # carry an AI tag — so the AI cap catches AI-heavy clusters even when
+        # their *primary* tag is the homelab/virtualization "setting".
+        for row in all_rows:
+            sids = json.loads(row["signal_ids_json"])
+            if not sids:
+                row["_ai_fraction"] = 0.0
+                continue
+            q = ",".join("?" * len(sids))
+            srows = conn.execute(
+                f"SELECT topics_json FROM summaries WHERE signal_id IN ({q})", sids
+            ).fetchall()
+            ai = sum(1 for s in srows
+                     if _AI_TOPICS & set(json.loads(s["topics_json"])))
+            row["_ai_fraction"] = ai / len(srows) if srows else 0.0
 
     rejected_sets = _rejected_signal_sets()
     rejected_vecs = _rejected_angle_embeddings()
@@ -326,19 +393,25 @@ def generate_for_clusters(cycle_id: str, top_n: int = 5,
              "%d rejected/parked angles embedded for similarity check",
              len(rejected_sets), len(rejected_vecs))
 
+    pillars = settings.content_pillars
+    max_ai = settings.max_ai_per_cycle
     pool_size = max(top_n, top_n * pool_multiplier)
     clusters, skipped = _select_diverse_clusters(
         list(all_rows), pool_size, max_per_topic,
         rejected_sets=rejected_sets,
+        pillars=pillars, max_ai=max_ai,
     )
     if skipped:
         log.info("skipped %d cluster(s) for overlap with rejected ideas: %s",
                  len(skipped), [(s['label'][:40], f"{s['overlap']:.0%}") for s in skipped[:5]])
-    log.info("selected %d clusters across %d distinct primary topics "
-             "(target=%d, pool=%d for backfill)",
+    n_ai = sum(1 for c in clusters if _is_ai_centric(c))
+    log.info("selected %d clusters across %d distinct topics (target=%d, "
+             "pool=%d; AI-centric=%d, cap=%s; pillars=%s)",
              len(clusters),
              len({json.loads(c['dominant_topics_json'])[0] for c in clusters}) if clusters else 0,
-             top_n, pool_size)
+             top_n, pool_size, n_ai,
+             max_ai if max_ai >= 0 else "off",
+             "on" if pillars else "off")
 
     if not clusters:
         log.info("no clusters to generate ideas from")

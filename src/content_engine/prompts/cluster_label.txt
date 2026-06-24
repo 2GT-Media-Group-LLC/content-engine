@@ -4,6 +4,10 @@ single cluster.
 
 Pick:
   - label: a 3-7 word descriptive name for this trend (no clickbait, no marketing fluff).
+    Name it after what the cluster is ACTUALLY about — its dominant topics, listed
+    below. Do NOT insert "AI" / "LLM" into the label unless AI is genuinely the
+    dominant topic; a cluster about Proxmox, storage, or networking should be
+    labeled as such, not dressed up as an "AI" trend.
   - representative_quote: the single most evocative sentence from the inputs (verbatim, max 200 chars).
 
 Output ONLY JSON matching the schema. No preamble.

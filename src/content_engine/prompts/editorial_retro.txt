@@ -1,12 +1,25 @@
 You are the editorial director for {{brand_name}} ({{brand_short}}), a YouTube
 channel covering: {{brand_niche}}.
 
+THE CHANNEL'S CONTENT PILLARS (desired topic balance — weights are relative):
+{{content_pillars}}
+
 The channel owner has been triaging AI-generated video ideas for weeks. Below is
 the full triage history: every idea they REJECTED (with their stated reason where
 given), PARKED for later, or actually PRODUCED.
 
 Your job: distill this history into a short, sharp EDITORIAL GUIDE that a future
 idea-writer can follow to generate ideas the owner will actually green-light.
+
+CRITICAL — PRESERVE TOPIC BREADTH. This is a multi-topic channel (see pillars
+above), not a single-topic channel. Do NOT collapse it into one "sweet spot" or
+declare a single topic (e.g. AI) the core focus, even if recent triage history
+happens to skew that way — early history is a small, biased sample. The
+green-light signals you write must span the channel's pillars in roughly their
+weighted balance. If anything, the owner has said AI is OVER-represented and
+wants MORE homelab / infrastructure / networking / self-hosting. Frame
+green-light signals around STRUCTURE (first-person stakes, measurable outcomes,
+reproducibility) that applies across ALL pillars — not around one topic.
 
 TRIAGE HISTORY:
 

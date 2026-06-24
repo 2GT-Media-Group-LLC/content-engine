@@ -61,6 +61,21 @@ def _load_history() -> tuple[str, int]:
     return "\n".join(lines), len(rows)
 
 
+def _format_pillars() -> str:
+    """Render content_mix pillars (desc by weight) for the retro prompt, so the
+    distilled guide preserves topic breadth instead of collapsing to one focus."""
+    pillars = settings.content_pillars
+    if not pillars:
+        return ("(no explicit content_mix configured — cover the full niche: "
+                + ", ".join(settings.brand_niche) + ")")
+    rows = sorted(pillars.items(), key=lambda kv: -kv[1])
+    cap = settings.max_ai_per_cycle
+    lines = [f"  - {name}: weight {int(w)}" for name, w in rows]
+    if cap >= 0:
+        lines.append(f"  (hard cap: at most {cap} AI-centric idea(s) per 5-idea brief)")
+    return "\n".join(lines)
+
+
 def _load_calibration_notes() -> str:
     """Pull the postmortem calibration summary if it exists (see postmortem.py)."""
     p = settings.db_path.parent / "calibration.md"
@@ -99,6 +114,7 @@ def maybe_refresh(cycle_id: str | None = None, *, force: bool = False) -> dict:
         "editorial_retro",
         triage_history=history,
         calibration_notes=_load_calibration_notes(),
+        content_pillars=_format_pillars(),
     )
     t0 = time.monotonic()
     try:

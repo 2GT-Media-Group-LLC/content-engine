@@ -214,6 +214,28 @@ class Settings:
     def outliers_per_keyword(self) -> int:
         return int((_CHANNEL.get("outliers") or {}).get("per_keyword", 8))
 
+    # ─── Content mix (desired topic balance for the weekly brief) ─────────────
+    @property
+    def content_pillars(self) -> dict[str, float]:
+        """Pillar name → relative weight. Biases which topics get first dibs in
+        cluster selection (homelab-heavy channels weight homelab highest).
+        Empty = no preference (pure heat ranking). Weights need not sum to 100."""
+        raw = (_CHANNEL.get("content_mix") or {}).get("pillars") or {}
+        out: dict[str, float] = {}
+        for k, v in raw.items():
+            try:
+                out[str(k).strip().lower()] = float(v)
+            except (TypeError, ValueError):
+                continue
+        return out
+
+    @property
+    def max_ai_per_cycle(self) -> int:
+        """Hard cap on AI-centric ideas per brief. -1 = uncapped."""
+        cm = _CHANNEL.get("content_mix") or {}
+        v = cm.get("max_ai_per_cycle")
+        return int(v) if v is not None else -1
+
     def __post_init__(self) -> None:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.vectors_path.mkdir(parents=True, exist_ok=True)

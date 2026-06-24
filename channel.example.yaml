@@ -28,6 +28,26 @@ audience_summary: |
   Mid-to-high technical viewers comfortable with Linux, containers,
   and virtualization. Not novices. Opinionated about AI and hypervisors.
 
+# ─── Content mix (desired topic balance for the weekly brief) ─────────────
+# AI topics move fast and score high "novelty", so without a thumb on the
+# scale they can dominate the brief. These pillars bias cluster selection
+# toward the balance you actually want.
+#   pillars: relative weights (need not sum to 100). Higher = first dibs.
+#            Pillar names match the engine's topic tags; "ai" covers both
+#            ai-local and ai-cloud.
+#   max_ai_per_cycle: hard cap on AI-centric ideas per brief (-1 = uncapped).
+content_mix:
+  pillars:
+    homelab: 40
+    virtualization: 25      # Proxmox, VMware, hypervisors
+    networking: 15
+    self-hosting: 15
+    security: 10
+    storage: 10
+    hardware: 10
+    ai: 15
+  max_ai_per_cycle: 1
+
 # Topics where your audience reliably has strong emotional reactions.
 # The synthesizer adds matching items to each idea's risk_flags so the
 # brief surfaces "this could be divisive" before you green-light it.
