@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -244,3 +245,86 @@ class Settings:
 
 
 settings = Settings()
+
+
+# ─── GUI-editable content_mix ────────────────────────────────────────────────
+# channel.yaml stays the single source of truth. The GUI reads/writes only the
+# content_mix block; the rest of the file (comments, other sections) is left
+# byte-for-byte intact. Writes validate-then-atomic-rename so a bad form post
+# can never corrupt the config.
+KNOWN_PILLARS = ("homelab", "virtualization", "networking", "self-hosting",
+                 "security", "storage", "hardware", "ai")
+
+
+def read_content_mix() -> dict:
+    """Fresh read of content_mix straight from disk — bypasses the import-time
+    cache so the GUI reflects edits (and the next `engine run`) immediately."""
+    import yaml
+    for p in (ROOT / "channel.yaml", ROOT / "channel.example.yaml"):
+        if p.exists():
+            try:
+                data = yaml.safe_load(p.read_text()) or {}
+            except Exception as e:  # noqa: BLE001
+                log.error("read_content_mix: failed to parse %s: %s", p.name, e)
+                return {}
+            return data.get("content_mix") or {}
+    return {}
+
+
+def update_content_mix(pillars: dict[str, Any], max_ai: int) -> None:
+    """Rewrite ONLY the content_mix block in channel.yaml. Validates the result
+    parses and round-trips to the requested values before writing; writes via a
+    temp file + atomic replace. Raises ValueError on bad input or if the
+    rewrite would not round-trip (channel.yaml left untouched in that case)."""
+    import yaml
+
+    clean: dict[str, int] = {}
+    for k, v in pillars.items():
+        name = str(k).strip().lower()
+        if not name:
+            continue
+        try:
+            iv = int(v)
+        except (TypeError, ValueError):
+            raise ValueError(f"pillar {name!r} weight must be a whole number")
+        if iv < 0:
+            raise ValueError(f"pillar {name!r} weight must be ≥ 0")
+        clean[name] = iv
+    if not clean:
+        raise ValueError("at least one pillar weight is required")
+    try:
+        cap = int(max_ai)
+    except (TypeError, ValueError):
+        raise ValueError("max_ai_per_cycle must be a whole number")
+    if cap < -1:
+        cap = -1
+
+    path = ROOT / "channel.yaml"
+    if not path.exists():
+        ex = ROOT / "channel.example.yaml"
+        path.write_text(ex.read_text() if ex.exists() else "")
+
+    text = path.read_text()
+    block = "content_mix:\n  pillars:\n"
+    for name, w in clean.items():
+        block += f"    {name}: {w}\n"
+    block += f"  max_ai_per_cycle: {cap}\n"
+
+    pat = re.compile(r"(?ms)^content_mix:.*?(?=^\S|\Z)")
+    if pat.search(text):
+        new_text = pat.sub(block + "\n", text, count=1)
+    else:
+        new_text = (text.rstrip()
+                    + "\n\n# ─── Content mix (desired topic balance) ──────────\n"
+                    + block)
+
+    # Validate before writing — never leave channel.yaml broken.
+    parsed = yaml.safe_load(new_text)
+    cm = (parsed or {}).get("content_mix") if isinstance(parsed, dict) else None
+    if not cm or cm.get("pillars") != clean or int(cm.get("max_ai_per_cycle", 0)) != cap:
+        raise ValueError("content_mix rewrite failed validation — channel.yaml unchanged")
+
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(new_text)
+    tmp.replace(path)
+    log.info("content_mix updated: %s pillars, max_ai=%d", len(clean), cap)

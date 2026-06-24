@@ -1,0 +1,75 @@
+{% extends "layout.html" %}
+{% block title %}Settings · {{ brand }} Engine{% endblock %}
+{% block content %}
+
+<header class="mb-8">
+  <div class="text-xs tracking-[0.3em] text-white/40 uppercase">Settings</div>
+  <h1 class="text-2xl font-semibold mt-1">Content mix</h1>
+  <p class="text-sm text-white/50 mt-1">
+    Bias which topics the weekly brief favors. Weights are relative (need not sum
+    to 100) — higher pillars get first dibs in cluster selection. The AI cap is a
+    hard limit on AI-centric ideas per 5-idea brief.
+  </p>
+</header>
+
+{% if saved %}
+<div class="card rounded-2xl p-4 mb-6 text-sm text-emerald-300 border border-emerald-500/30">
+  Saved to <span class="font-mono">channel.yaml</span>. Changes apply to the next run.
+</div>
+{% endif %}
+{% if err %}
+<div class="card rounded-2xl p-4 mb-6 text-sm text-rose-300 border border-rose-500/30">
+  Couldn’t save: {{ err }}
+</div>
+{% endif %}
+
+<form method="post" action="/settings" class="grid md:grid-cols-[1fr_320px] gap-6">
+
+  <!-- pillars -->
+  <section class="card rounded-2xl p-6">
+    <div class="text-[10px] text-white/40 uppercase tracking-wider mb-4">Pillar weights</div>
+    <div class="space-y-3">
+      {% for p in pillars %}
+      <label class="flex items-center justify-between gap-4">
+        <span class="text-sm text-white/85 font-mono">{{ p.name }}</span>
+        <input type="number" name="pillar_{{ p.name }}" value="{{ p.weight }}"
+               min="0" max="100" step="1" inputmode="numeric"
+               class="w-24 rounded-lg bg-white/5 border border-white/10 px-3 py-1.5
+                      text-right tabular-nums text-white/90 focus:border-emerald-400/50
+                      focus:outline-none">
+      </label>
+      {% endfor %}
+    </div>
+    <p class="text-[11px] text-white/35 mt-4">
+      Leave a weight blank to drop that pillar to lowest priority. "ai" covers both
+      local and cloud AI.
+    </p>
+  </section>
+
+  <!-- cap + save -->
+  <aside class="card rounded-2xl p-6 h-fit">
+    <div class="text-[10px] text-white/40 uppercase tracking-wider mb-4">AI cap</div>
+    <label class="block">
+      <span class="text-sm text-white/85">Max AI ideas per brief</span>
+      <input type="number" name="max_ai_per_cycle" value="{{ max_ai }}"
+             min="-1" max="5" step="1" inputmode="numeric"
+             class="mt-2 w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2
+                    tabular-nums text-white/90 focus:border-emerald-400/50 focus:outline-none">
+    </label>
+    <p class="text-[11px] text-white/35 mt-2 leading-relaxed">
+      Hard cap on AI-centric ideas (a cluster counts as AI if ≥40% of its signals
+      are AI). <span class="text-white/55">0</span> = no AI this week ·
+      <span class="text-white/55">-1</span> = uncapped.
+    </p>
+    <button type="submit"
+            class="mt-6 w-full rounded-xl bg-emerald-500/90 hover:bg-emerald-400
+                   text-black font-medium py-2.5 transition">
+      Save content mix
+    </button>
+    <p class="text-[11px] text-white/35 mt-3 text-center">
+      Writes <span class="font-mono">channel.yaml</span> · next run picks it up
+    </p>
+  </aside>
+</form>
+
+{% endblock %}

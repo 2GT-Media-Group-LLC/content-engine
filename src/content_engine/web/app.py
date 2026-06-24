@@ -12,6 +12,8 @@ Routes:
   GET  /performance   own-channel video performance + idea→video traceback
   GET  /logs          browse + tail run/agent logs in data/runs
   GET  /logs/raw      plain-text tail (auto-refresh poll target)
+  GET  /settings      edit content-mix pillars + AI cap (writes channel.yaml)
+  POST /settings      save content-mix changes
   GET  /health        container health probe
 
 Reads the same SQLite DB the engine writes to. Triggered runs fork a
@@ -27,6 +29,7 @@ import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
+from urllib.parse import quote
 
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -34,7 +37,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from ..config import settings
+from ..config import settings, read_content_mix, update_content_mix, KNOWN_PILLARS
 from ..db import get_conn, init_db
 
 log = logging.getLogger("engine.web")
@@ -542,6 +545,48 @@ def logs_raw(file: str, lines: int = 300):
         raise HTTPException(404, f"log not found: {file}")
     lines = max(50, min(lines, 5000))
     return HTMLResponse(_tail(path, lines), media_type="text/plain")
+
+
+# ─── settings: content mix (pillars + AI cap) ────────────────────────────────
+def _pillar_rows() -> list[dict]:
+    """Build the editable pillar list: every known pillar plus any custom ones
+    already in channel.yaml, pre-filled with current weights."""
+    cm = read_content_mix()
+    pillars = cm.get("pillars") or {}
+    names = list(KNOWN_PILLARS) + [p for p in pillars if p not in KNOWN_PILLARS]
+    return [{"name": n, "weight": pillars.get(n, "")} for n in names]
+
+
+@app.get("/settings", response_class=HTMLResponse)
+def settings_view(request: Request, saved: int = 0, err: str = ""):
+    cm = read_content_mix()
+    return templates.TemplateResponse(
+        request, "settings.html",
+        {"pillars": _pillar_rows(),
+         "max_ai": cm.get("max_ai_per_cycle", 1),
+         "saved": bool(saved), "err": err,
+         "brand": settings.brand_name},
+    )
+
+
+@app.post("/settings")
+async def settings_save(request: Request):
+    form = await request.form()
+    pillars: dict[str, str] = {}
+    # Known pillars + any custom pillar_* fields the form carried back.
+    names = list(KNOWN_PILLARS)
+    names += [k[len("pillar_"):] for k in form
+              if k.startswith("pillar_") and k[len("pillar_"):] not in names]
+    for name in names:
+        raw = str(form.get(f"pillar_{name}", "")).strip()
+        if raw != "":          # blank = omit (pillar drops to default low weight)
+            pillars[name] = raw
+    max_ai = str(form.get("max_ai_per_cycle", "1")).strip() or "1"
+    try:
+        update_content_mix(pillars, max_ai)
+    except ValueError as e:
+        return RedirectResponse(f"/settings?err={quote(str(e))}", status_code=303)
+    return RedirectResponse("/settings?saved=1", status_code=303)
 
 
 @app.get("/performance", response_class=HTMLResponse)
