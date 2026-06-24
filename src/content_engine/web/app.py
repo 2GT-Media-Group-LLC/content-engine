@@ -280,8 +280,13 @@ def trigger_run():
     log_path = _RUNS_DIR / f"manual_{ts}.log"
     # bash -lc gives us shell semantics for "&&", plus loads any user profile
     # bits (PATH for ollama, etc.) the same way the launchd weekly cron does.
-    cmd = f'{shlex.quote(str(_ENGINE_BIN))} collect && ' \
-          f'{shlex.quote(str(_ENGINE_BIN))} run --notes "manual via GUI"'
+    # collect → refresh perf snapshot (best-effort) → run. sync-performance is
+    # wrapped in (… || true) so a VidIQ outage can't block idea generation; the
+    # run just proceeds on the prior snapshot.
+    eng = shlex.quote(str(_ENGINE_BIN))
+    cmd = (f'{eng} collect && '
+           f'( {eng} sync-performance || true ) && '
+           f'{eng} run --notes "manual via GUI"')
     log.info("triggering manual run → %s", log_path.name)
 
     with open(log_path, "wb") as logf:
