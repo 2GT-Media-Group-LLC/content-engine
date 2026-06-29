@@ -119,7 +119,8 @@ def maybe_refresh(cycle_id: str | None = None, *, force: bool = False) -> dict:
     t0 = time.monotonic()
     try:
         resp = _ollama_chat(settings.heavy.ollama_tag, prompt,
-                             options={"temperature": 0.3, "top_p": 0.9})
+                             options={"temperature": 0.3, "top_p": 0.9,
+                                      "num_ctx": settings.heavy.max_ctx})
         guide = resp["message"]["content"].strip()
     except Exception as e:
         log.error("retro generation failed: %s", e)

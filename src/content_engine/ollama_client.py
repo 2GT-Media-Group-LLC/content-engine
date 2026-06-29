@@ -160,6 +160,11 @@ def run_agent(
             resp = _ollama_chat(
                 tier.ollama_tag, rendered,
                 format_schema=schema_json, system=system,
+                # Explicitly bound the context so the model loads with a
+                # right-sized KV cache instead of inheriting whatever default
+                # Ollama (or another client) left set. Keep all tiers of the
+                # same model on the same value so it loads once and is reused.
+                options={"temperature": 0.4, "num_ctx": tier.max_ctx},
             )
             elapsed_ms = int((time.monotonic() - t0) * 1000)
             content = resp["message"]["content"]

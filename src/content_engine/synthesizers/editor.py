@@ -154,16 +154,21 @@ def polish_fields(
         fields_to_rewrite=", ".join(fields),
         length_limits=length_limits,
     )
-    model = {
-        "polish": settings.polish.ollama_tag,
-        "heavy": settings.heavy.ollama_tag,
-        "mid": settings.mid.ollama_tag,
-    }.get(tier, settings.polish.ollama_tag)
+    tier_cfg = {
+        "polish": settings.polish,
+        "heavy": settings.heavy,
+        "mid": settings.mid,
+    }.get(tier, settings.polish)
+    model = tier_cfg.ollama_tag
 
     t0 = time.monotonic()
     try:
-        # NOTE: no format_schema — we want unconstrained generation. Lower temp for editing.
-        resp = _ollama_chat(model, prompt, options={"temperature": 0.2, "top_p": 0.9})
+        # NOTE: no format_schema — we want unconstrained generation. Lower temp
+        # for editing. num_ctx matches the tier so this reuses the model
+        # instance already loaded by generate_idea (no second load).
+        resp = _ollama_chat(model, prompt,
+                            options={"temperature": 0.2, "top_p": 0.9,
+                                     "num_ctx": tier_cfg.max_ctx})
         elapsed_ms = int((time.monotonic() - t0) * 1000)
         raw = resp["message"]["content"].strip()
 
