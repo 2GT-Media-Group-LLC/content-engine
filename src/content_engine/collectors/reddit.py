@@ -23,20 +23,27 @@ from typing import Iterable
 import feedparser
 import httpx
 
+from .. import __version__
 from ..config import settings
 from .base import ingest_signals, signals_from_reddit_listing, signals_from_reddit_rss
 
 log = logging.getLogger("engine.reddit")
 
-_UA = (
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-)
-_RSS_HEADERS = {
-    "User-Agent": _UA,
-    "Accept": "application/atom+xml,application/rss+xml,application/xml,text/xml,*/*",
-    "Accept-Language": "en-US,en;q=0.9",
-}
+
+def _user_agent() -> str:
+    """Reddit's API rules REQUIRE a unique, descriptive User-Agent in the form
+    '<platform>:<app id>:<version> (by /u/<username>)'. Generic or
+    browser-spoofed UAs get rate-limited or rejected outright — the opposite of
+    what we want. Set REDDIT_USERNAME so the contact field is a real account."""
+    user = settings.reddit_username or settings.brand_short.lower()
+    return f"python:content-engine:{__version__} (by /u/{user})"
+
+
+def _rss_headers() -> dict:
+    return {
+        "User-Agent": _user_agent(),
+        "Accept": "application/atom+xml,application/rss+xml,application/xml,text/xml,*/*",
+    }
 
 # Cached app-only OAuth token: (token, expires_epoch).
 _token_cache: tuple[str, float] | None = None
@@ -54,7 +61,7 @@ def _get_app_token() -> str:
         "https://www.reddit.com/api/v1/access_token",
         auth=(settings.reddit_client_id, settings.reddit_client_secret),
         data={"grant_type": "client_credentials"},
-        headers={"User-Agent": _UA},
+        headers={"User-Agent": _user_agent()},
         timeout=30.0,
     )
     r.raise_for_status()
@@ -69,7 +76,7 @@ def _get_app_token() -> str:
 def _fetch_top_oauth(sub: str, time_window: str, limit: int) -> dict:
     token = _get_app_token()
     url = f"https://oauth.reddit.com/r/{sub}/top"
-    headers = {"Authorization": f"bearer {token}", "User-Agent": _UA}
+    headers = {"Authorization": f"bearer {token}", "User-Agent": _user_agent()}
     with httpx.Client(timeout=30.0, headers=headers) as client:
         for attempt in range(3):
             r = client.get(url, params={"t": time_window, "limit": limit})
@@ -92,7 +99,7 @@ def _fetch_top_oauth(sub: str, time_window: str, limit: int) -> dict:
 def _fetch_top_rss(sub: str, time_window: str, limit: int) -> feedparser.FeedParserDict:
     url = f"https://www.reddit.com/r/{sub}/top/.rss"
     params = {"t": time_window, "limit": limit}
-    with httpx.Client(timeout=30.0, headers=_RSS_HEADERS, follow_redirects=True) as client:
+    with httpx.Client(timeout=30.0, headers=_rss_headers(), follow_redirects=True) as client:
         for attempt in range(3):
             r = client.get(url, params=params)
             if r.status_code == 429:

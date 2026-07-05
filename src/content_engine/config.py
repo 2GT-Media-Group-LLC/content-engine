@@ -182,6 +182,13 @@ class Settings:
         return (os.getenv("REDDIT_CLIENT_SECRET") or "").strip()
 
     @property
+    def reddit_username(self) -> str:
+        """Reddit username for the API User-Agent's contact field. Reddit's API
+        rules require a unique descriptive UA — '(by /u/<username>)' — and
+        penalize generic/browser-spoofed ones."""
+        return (os.getenv("REDDIT_USERNAME") or "").strip()
+
+    @property
     def reddit_auth_available(self) -> bool:
         return bool(self.reddit_client_id and self.reddit_client_secret)
 
