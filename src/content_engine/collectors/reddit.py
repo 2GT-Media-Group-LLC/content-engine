@@ -16,6 +16,7 @@ Both paths produce identical RawSignals.
 from __future__ import annotations
 
 import logging
+import random
 import time
 from datetime import datetime
 from typing import Iterable
@@ -28,6 +29,12 @@ from ..config import settings
 from .base import ingest_signals, signals_from_reddit_listing, signals_from_reddit_rss
 
 log = logging.getLogger("engine.reddit")
+
+
+class RedditRateLimited(Exception):
+    """Raised when a subreddit fetch exhausts its 429 retries — distinguishable
+    from hard failures (403/network) so the collector can re-sweep only the
+    rate-limited ones after a cooldown."""
 
 
 def _user_agent() -> str:
@@ -97,28 +104,37 @@ def _fetch_top_oauth(sub: str, time_window: str, limit: int) -> dict:
 
 # ─── RSS fallback ─────────────────────────────────────────────────────────────
 def _fetch_top_rss(sub: str, time_window: str, limit: int) -> feedparser.FeedParserDict:
+    """Fetch a subreddit's top RSS feed. Two quick 429 retries with short
+    jittered backoff; if still throttled, raise RedditRateLimited so the caller
+    can re-sweep it after a cooldown (Reddit's per-IP RSS window resets)."""
     url = f"https://www.reddit.com/r/{sub}/top/.rss"
     params = {"t": time_window, "limit": limit}
     with httpx.Client(timeout=30.0, headers=_rss_headers(), follow_redirects=True) as client:
-        for attempt in range(3):
+        for attempt in range(2):
             r = client.get(url, params=params)
             if r.status_code == 429:
                 retry_after = r.headers.get("Retry-After")
-                wait = (int(retry_after) if retry_after and retry_after.isdigit()
-                        else 8 * (attempt + 1))
-                log.warning("r/%s 429 (rss) — waiting %ds (attempt %d/3)",
-                            sub, wait, attempt + 1)
+                base = (int(retry_after) if retry_after and retry_after.isdigit()
+                        else 5 * (attempt + 1))
+                wait = base + random.uniform(0, 3)  # jitter to de-sync bursts
+                log.info("r/%s 429 (rss) — waiting %.0fs (attempt %d/2)",
+                         sub, wait, attempt + 1)
                 time.sleep(wait)
                 continue
             r.raise_for_status()
             return feedparser.parse(r.text)
-        raise httpx.HTTPStatusError("429 after retries", request=r.request, response=r)
+        raise RedditRateLimited(f"r/{sub} rate-limited")
 
 
 def collect(time_window: str = "week",
             subs: Iterable[tuple[str, int]] | None = None,
-            inter_request_sleep: float | None = None) -> dict:
-    """Fetch top posts for each subreddit via OAuth (if configured) or RSS."""
+            inter_request_sleep: float | None = None,
+            resweep_cooldown: float = 45.0) -> dict:
+    """Fetch top posts for each subreddit via OAuth (if configured) or RSS.
+
+    On the RSS path, subreddits that get rate-limited in the first pass are
+    retried in a second sweep after `resweep_cooldown` seconds, by which point
+    Reddit's per-IP RSS window has usually reset."""
     subs = list(subs) if subs else settings.reddit_subreddits
     use_oauth = settings.reddit_auth_available
     mode = "oauth" if use_oauth else "rss"
@@ -130,33 +146,58 @@ def collect(time_window: str = "week",
              mode, inter_request_sleep)
     if not use_oauth:
         log.warning("no REDDIT_CLIENT_ID/SECRET set — using best-effort RSS "
-                    "(Reddit rate-limits these; expect some 429s). Create a free "
-                    "script app at https://www.reddit.com/prefs/apps for reliable "
-                    "100 req/min access.")
+                    "(Reddit rate-limits these; a second retry-sweep recovers "
+                    "throttled subs). The API needs approval under Reddit's "
+                    "Responsible Builder Policy; RSS avoids that entirely.")
 
     total = 0
     errors: list[str] = []
+
+    def _one(sub_name: str, limit: int) -> int:
+        if use_oauth:
+            listing = _fetch_top_oauth(sub_name, time_window, limit)
+            sigs = signals_from_reddit_listing(listing, default_subreddit=sub_name)
+        else:
+            feed = _fetch_top_rss(sub_name, time_window, limit)
+            sigs = signals_from_reddit_rss(feed, subreddit=sub_name)
+        return ingest_signals(sigs)
+
+    rate_limited: list[tuple[str, int]] = []
     for sub_name, limit in subs:
         try:
             log.info("fetching r/%s top %d (%s) via %s", sub_name, limit, time_window, mode)
-            if use_oauth:
-                listing = _fetch_top_oauth(sub_name, time_window, limit)
-                sigs = signals_from_reddit_listing(listing, default_subreddit=sub_name)
-            else:
-                feed = _fetch_top_rss(sub_name, time_window, limit)
-                sigs = signals_from_reddit_rss(feed, subreddit=sub_name)
-            n = ingest_signals(sigs)
+            n = _one(sub_name, limit)
             total += n
             log.info("  → ingested %d from r/%s", n, sub_name)
             time.sleep(inter_request_sleep)
+        except RedditRateLimited:
+            log.info("  r/%s throttled — queued for second sweep", sub_name)
+            rate_limited.append((sub_name, limit))
         except Exception as e:
             errors.append(f"r/{sub_name}: {str(e)[:120]}")
             log.warning("r/%s failed: %s", sub_name, e)
+
+    # Second sweep: only the subs that hit the rate limit, after a cooldown.
+    if rate_limited:
+        log.info("second sweep for %d rate-limited sub(s) after %.0fs cooldown",
+                 len(rate_limited), resweep_cooldown)
+        time.sleep(resweep_cooldown)
+        for sub_name, limit in rate_limited:
+            try:
+                log.info("re-fetching r/%s (sweep 2)", sub_name)
+                n = _one(sub_name, limit)
+                total += n
+                log.info("  → ingested %d from r/%s", n, sub_name)
+                time.sleep(inter_request_sleep)
+            except Exception as e:
+                errors.append(f"r/{sub_name} (sweep 2): {str(e)[:100]}")
+                log.warning("r/%s still failing after cooldown: %s", sub_name, e)
 
     return {
         "platform": "reddit",
         "mode": mode,
         "subreddits_fetched": len(subs),
+        "reswept": len(rate_limited),
         "ingested": total,
         "errors": errors,
         "ran_at": datetime.utcnow().isoformat(),
