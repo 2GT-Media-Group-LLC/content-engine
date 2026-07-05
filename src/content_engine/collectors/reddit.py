@@ -117,16 +117,22 @@ def _fetch_top_rss(sub: str, time_window: str, limit: int) -> feedparser.FeedPar
 
 def collect(time_window: str = "week",
             subs: Iterable[tuple[str, int]] | None = None,
-            inter_request_sleep: float = 2.0) -> dict:
+            inter_request_sleep: float | None = None) -> dict:
     """Fetch top posts for each subreddit via OAuth (if configured) or RSS."""
     subs = list(subs) if subs else settings.reddit_subreddits
     use_oauth = settings.reddit_auth_available
     mode = "oauth" if use_oauth else "rss"
-    log.info("reddit collector using %s path", mode)
+    # OAuth has a real 100 req/min budget; the unauthenticated RSS feeds are
+    # rate-limited far tighter, so pace them much more slowly to avoid 429s.
+    if inter_request_sleep is None:
+        inter_request_sleep = 2.0 if use_oauth else 6.0
+    log.info("reddit collector using %s path (%.0fs between requests)",
+             mode, inter_request_sleep)
     if not use_oauth:
         log.warning("no REDDIT_CLIENT_ID/SECRET set — using best-effort RSS "
-                    "(Reddit may 403/429). Create a free script app at "
-                    "https://www.reddit.com/prefs/apps for reliable access.")
+                    "(Reddit rate-limits these; expect some 429s). Create a free "
+                    "script app at https://www.reddit.com/prefs/apps for reliable "
+                    "100 req/min access.")
 
     total = 0
     errors: list[str] = []
