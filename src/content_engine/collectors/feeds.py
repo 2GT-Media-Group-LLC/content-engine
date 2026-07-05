@@ -75,10 +75,17 @@ def collect(max_per_feed: int = 10,
             feed = feedparser.parse(url, request_headers={
                 "User-Agent": f"{settings.brand_short}-content-engine/0.1",
             })
-            if feed.bozo and not feed.entries:
-                # bozo=True with no entries is a parse failure; with entries
-                # it's usually a non-fatal namespace quirk we can ignore.
-                raise RuntimeError(str(feed.bozo_exception)[:200])
+            if not feed.entries:
+                # feedparser sets .version to '' when it didn't recognize a feed
+                # format — almost always the vendor dropped RSS and the URL now
+                # serves an HTML page. Surface that plainly, not as a cryptic
+                # "not well-formed (invalid token)" XML error.
+                if not feed.get("version"):
+                    raise RuntimeError(
+                        "URL did not return a valid RSS/Atom feed (got HTML?). "
+                        "The vendor may have dropped RSS — update data/feeds.yaml.")
+                if feed.bozo:
+                    raise RuntimeError(str(feed.bozo_exception)[:200])
 
             signals: list[RawSignal] = []
             for item in (feed.entries or [])[:max_per_feed]:

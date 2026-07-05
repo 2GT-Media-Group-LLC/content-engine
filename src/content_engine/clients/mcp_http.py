@@ -49,6 +49,10 @@ class MCPClient:
         self._auth_token = auth_token
         self._timeout = timeout
         self._id_counter = itertools.count(1)
+        # Circuit breaker: once the account is out of credits (or hard-blocked),
+        # short-circuit every subsequent cost-bearing call for the rest of the
+        # process instead of paying a round-trip + a failed retry each time.
+        self._disabled_reason: str | None = None
         self._headers = {
             "Authorization": f"Bearer {auth_token}",
             "Content-Type": "application/json",
@@ -71,13 +75,38 @@ class MCPClient:
             { "content": [{ "type": "text", "text": "..." }], "isError": bool }
         Most servers (including VidIQ) put a JSON blob inside the text block.
         """
-        resp = self._rpc("tools/call", {"name": name, "arguments": arguments or {}})
+        # Circuit-broken? Fail fast without touching the network.
+        if self._disabled_reason is not None:
+            raise MCPError(f"{name} skipped — {self._disabled_reason}")
+
+        try:
+            resp = self._rpc("tools/call", {"name": name, "arguments": arguments or {}})
+        except MCPTransportError as e:
+            # Persistent 429 (after the built-in retries) usually means we're
+            # over quota — trip the breaker after a few so we stop hammering.
+            if "429" in str(e):
+                self._rate_limit_hits = getattr(self, "_rate_limit_hits", 0) + 1
+                if self._rate_limit_hits >= 3:
+                    self._disabled_reason = "VidIQ rate-limited (repeated 429)"
+                    log.warning("VidIQ returned 429 repeatedly — disabling further "
+                                "VidIQ calls for this run.")
+            raise
+        self._rate_limit_hits = 0  # a success clears the streak
         if not isinstance(resp, dict):
             return resp
         if resp.get("isError"):
             # Tool returned an error envelope. Surface it as MCPError (non-retried).
             blocks = resp.get("content") or []
             text = blocks[0].get("text") if blocks else str(resp)
+            # Trip the breaker on account-level failures that won't recover this
+            # run (no more credits / plan limit). Logged once here.
+            low = (text or "").lower()
+            if "not enough credits" in low or "upgrade your plan" in low:
+                self._disabled_reason = "VidIQ credits exhausted for this run"
+                log.warning("VidIQ credits exhausted — disabling further VidIQ "
+                            "calls for this run (top up at app.vidiq.com). "
+                            "Title scoring falls back to the heuristic; peer/own "
+                            "YouTube + comments + outliers are skipped.")
             raise MCPError(f"{name} returned isError=true: {text[:300]}")
         blocks = resp.get("content") or []
         if not blocks:

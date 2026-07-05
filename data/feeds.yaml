@@ -34,9 +34,6 @@
   tier: 1
   tags: [tailscale, networking, vpn]
 
-- name: Ubiquiti Blog
-  url: https://blog.ui.com/feed/
-  tier: 1
   tags: [unifi, networking]
 
 - name: Ubuntu Blog

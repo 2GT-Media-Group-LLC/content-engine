@@ -208,7 +208,7 @@ The `gui` command stays in the foreground. In a separate shell you can:
 
 | Source | Where it's configured | Auth required |
 |---|---|---|
-| Reddit | `channel.yaml` → `reddit.subreddits` | **none** (public JSON API) |
+| Reddit | `channel.yaml` → `reddit.subreddits` | **optional but recommended** — a free Reddit "script" app (`REDDIT_CLIENT_ID`/`REDDIT_CLIENT_SECRET`). Reddit 403-blocks unauthenticated reads now; without creds the collector falls back to best-effort RSS. |
 | Hacker News | `channel.yaml` → `hackernews.queries` | **none** (Algolia HN search) |
 | RSS / Atom blogs | `data/feeds.yaml` | **none** |
 | GitHub releases | `data/github_repos.yaml` | **none** (unauthenticated, 60 req/hr) |

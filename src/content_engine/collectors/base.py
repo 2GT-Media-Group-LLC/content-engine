@@ -2,11 +2,17 @@
 and DB insert. They don't call LLMs."""
 from __future__ import annotations
 
+import calendar
+import html as _html
+import re
 from datetime import datetime
 from typing import Iterable
 
 from ..db import get_conn, upsert_signal
 from ..schemas import RawSignal, SourcePlatform
+
+_TAG_RE = re.compile(r"<[^>]+>")
+_SUBMITTED_RE = re.compile(r"\bsubmitted by\b", re.IGNORECASE)
 
 
 def ingest_signals(signals: Iterable[RawSignal | dict]) -> int:
@@ -63,6 +69,58 @@ def signals_from_youtube_videos(videos, channel: dict) -> list[RawSignal]:
                 "is_owned": channel.get("is_owned", False),
                 "tags": v.get("tags") or [],
             },
+        ))
+    return out
+
+
+def _clean_reddit_rss_body(html_content: str) -> str:
+    """Reddit RSS entry content is HTML: the selftext (if any) followed by a
+    'submitted by /u/… [link] [comments]' footer. Strip tags/entities and drop
+    the footer so the summarizer sees just the post body."""
+    if not html_content:
+        return ""
+    text = _html.unescape(_TAG_RE.sub(" ", html_content))
+    text = _SUBMITTED_RE.split(text, maxsplit=1)[0]  # cut the boilerplate footer
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def signals_from_reddit_rss(feed, *, subreddit: str) -> list[RawSignal]:
+    """Convert a parsed Reddit RSS/Atom feed (feedparser result) into
+    RawSignals. Reddit blocks the public .json endpoints (403) but still serves
+    per-subreddit .rss feeds. RSS omits score/comment counts — fine, since heat
+    is volume×novelty×recency and these are already top-of-week posts."""
+    out: list[RawSignal] = []
+    for e in getattr(feed, "entries", []):
+        # Reddit's Atom id is the fullname "t3_<base36>"; strip the prefix so it
+        # matches ids from the old JSON path and dedupes against them.
+        rid = (e.get("id") or "").replace("t3_", "") or e.get("link") or ""
+        if not rid:
+            continue
+        author = e.get("author") or ""
+        if author.startswith("/u/"):
+            author = author[3:]
+        posted_at = None
+        for key in ("published_parsed", "updated_parsed"):
+            t = e.get(key)
+            if t:
+                posted_at = datetime.utcfromtimestamp(calendar.timegm(t))
+                break
+        content = ""
+        if e.get("content"):
+            content = e["content"][0].get("value", "")
+        content = content or e.get("summary", "")
+        tags = e.get("tags") or []
+        flair = tags[0].get("term") if tags else None
+        out.append(RawSignal(
+            platform=SourcePlatform.reddit,
+            external_id=rid,
+            url=e.get("link"),
+            author=author or None,
+            title=e.get("title"),
+            body=_clean_reddit_rss_body(content),
+            posted_at=posted_at,
+            metrics={},  # RSS carries no score/comment counts
+            extra={"subreddit": subreddit, "flair": flair, "source": "rss"},
         ))
     return out
 

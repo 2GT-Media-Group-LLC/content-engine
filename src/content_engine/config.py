@@ -168,6 +168,23 @@ class Settings:
         rows = (_CHANNEL.get("reddit") or {}).get("subreddits", [])
         return [(r["name"], int(r.get("limit", 12))) for r in rows if r.get("name")]
 
+    # ─── Reddit auth (optional but strongly recommended) ─────────────────────
+    # Reddit 403-blocks unauthenticated .json/.rss reads from many IPs now.
+    # A free "script" app (https://www.reddit.com/prefs/apps) gives app-only
+    # OAuth with a real 100 req/min quota. Set both to enable it; without them
+    # the collector falls back to best-effort RSS.
+    @property
+    def reddit_client_id(self) -> str:
+        return (os.getenv("REDDIT_CLIENT_ID") or "").strip()
+
+    @property
+    def reddit_client_secret(self) -> str:
+        return (os.getenv("REDDIT_CLIENT_SECRET") or "").strip()
+
+    @property
+    def reddit_auth_available(self) -> bool:
+        return bool(self.reddit_client_id and self.reddit_client_secret)
+
     @property
     def hn_queries(self) -> list[str]:
         return list((_CHANNEL.get("hackernews") or {}).get("queries", []))
